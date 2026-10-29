@@ -1,0 +1,16 @@
+if(NOT DEFINED SOURCE_DIR OR NOT IS_DIRECTORY "${SOURCE_DIR}")
+    message(FATAL_ERROR "SOURCE_DIR must point to the example scripts directory")
+endif()
+if(NOT DEFINED DESTINATION_DIR OR DESTINATION_DIR STREQUAL "")
+    message(FATAL_ERROR "DESTINATION_DIR is required")
+endif()
+
+file(MAKE_DIRECTORY "${DESTINATION_DIR}")
+file(GLOB example_scripts LIST_DIRECTORIES false "${SOURCE_DIR}/*.py")
+foreach(example_script IN LISTS example_scripts)
+    get_filename_component(script_name "${example_script}" NAME)
+    # Preserve scripts that a user has edited in the build directory.
+    if(NOT EXISTS "${DESTINATION_DIR}/${script_name}")
+        configure_file("${example_script}" "${DESTINATION_DIR}/${script_name}" COPYONLY)
+    endif()
+endforeach()

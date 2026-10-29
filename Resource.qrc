@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>res/image/darkImage.png</file>
+        <file>res/image/lightImage.png</file>
+        <file>res/icons/icon.png</file>
+        <file>res/image/acryliclight.png</file>
+        <file>res/image/ElaMicaLight.png</file>
+        <file>res/image/acrylicdark.png</file>
+        <file>res/image/ElaMicaNight.png</file>
+    </qresource>
+</RCC>

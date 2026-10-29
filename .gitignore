@@ -1,0 +1,38 @@
+# 构建输出
+build/
+cmake-build-*/
+AImodels/
+
+# IDE 和编辑器文件
+.vs/
+.qtcreator/
+*.pro.user
+*.pro.user.*
+
+# 其他分支
+feature-ai-version/
+# 本机配置和凭据
+CMakeUserPresets.json
+.env
+.env.*
+!.env.example
+*.local.json
+*.local.ini
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 可再生缓存及日志
+**/CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+*.aps
+*.obj
+*.pdb
+*.ilk
+__pycache__/
+*.py[cod]
+*.log
+
+# 排班项目、导出和用户数据请保存在仓库之外
