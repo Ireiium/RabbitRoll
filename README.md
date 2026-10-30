@@ -1,8 +1,10 @@
 # RabbitRoll兔子排班
 
-RabbitRoll兔子排班是一款专注于解决团队排班问题的软件，尤其适用于大学生团队管理。它能够高效处理诸如高校学生会成员值班安排等繁琐事务，显著减少工作量。
+RabbitRoll兔子排班是一款专注于解决团队排班问题的软件，尤其适用于大学生团队管理。它能够高效处理诸如高校学生组织/团队成员值班安排等繁琐事务，显著减少工作量。
 
 程序支持平台：Windows。
+
+![](readme/screenshot.png)
 
 ## 构建说明
 
@@ -37,18 +39,29 @@ RabbitRoll兔子排班是一款专注于解决团队排班问题的软件，尤�
 
 ### 打包与部署
 
-若需将程序分发至其他设备，可以在 CMake GUI 中设置 `CMAKE_INSTALL_PREFIX`，重新配置、生成后，在 Visual Studio 中构建 `INSTALL` 项目。CMake 会将程序、运行库和资源部署到指定目录。
+本项目采用 Windows 动态库部署方式，通过 CMake 安装规则收集程序、依赖库和资源。安装阶段会调用 Qt 的部署 API，在 Windows 上由 `windeployqt` 部署所需的 Qt 动态库及插件；ElaWidgetTools、Python 环境、脚本和许可证由项目安装规则单独处理。发布时使用与构建一致的 Qt 版本、编译器和 x64 架构，统一采用 Release 配置。
 
-也可以按以下步骤，使用 Qt 的 `windeployqt` 工具手动打包：
+参考：[Qt 6.8 Windows 部署说明](https://doc.qt.io/qt-6.8/windows-deployment.html)、[Qt 6.8 CMake 运行时依赖部署 API](https://doc.qt.io/qt-6.8/qt-deploy-runtime-dependencies.html)。
 
-1. 将编译生成的 `RabbitRoll.exe`、`python312.dll`、`ElaWidgetTools.dll`，以及 `scripts`、`pythonembed`、`Excel template` 和 `licenses` 文件夹，拷贝至一个独立的空文件夹，例如 `D:/RabbitRoll`。这些文件应取自同一次 Release 构建的输出目录。
-2. 进入本次构建所用 Qt 的 `6.8.3/msvc2022_64/bin` 文件夹，右键点击【在终端中打开】，输入以下部署命令并回车。请将示例路径替换为实际的程序路径。
+#### 生成发布目录
 
-```powershell
-.\windeployqt.exe --release "D:\RabbitRoll\RabbitRoll.exe"
-```
+1. 在 CMake GUI 中打开已配置的构建目录，将 `CMAKE_INSTALL_PREFIX` 设置为一个新的空目录，例如 `D:/RabbitRoll-package`，与源码目录、构建目录分开。
+2. 依次点击【Configure】和【Generate】，确认配置、生成过程没有错误。
+3. 点击【Open Project】，在 Visual Studio 中选择 **Release / x64**，先生成 `RabbitRoll` 项目，再生成 `INSTALL` 项目。
+4. 检查安装输出，确认依赖部署成功。`CMAKE_INSTALL_PREFIX` 指定的目录即为待验证的发布目录。构建目录中的自动复制仅方便开发运行，正式分发使用安装生成的目录。
 
-完成后，程序打包完成，可直接打开 `RabbitRoll.exe` 运行。分发时请保留整个打包目录中的运行库和资源文件。
+#### 检查依赖与资源
+
+- **Qt 运行库与插件**：保留部署工具生成的目录结构，包括 `platforms/qwindows.dll` 等运行所需插件和生成的 `qt.conf`。不得混用 Debug 与 Release 文件，或混用其他 Qt 套件中的 DLL。
+- **第三方依赖与 Python**：确认安装目录包含 ElaWidgetTools 动态库、`python312.dll`、`pythonembed`、示例脚本及许可文件。Qt 部署工具不负责收集全部第三方依赖，不能仅凭部署命令成功就认定发布包完整。
+- **MSVC 运行库**：确认目标系统具备与构建工具链兼容的 x64 Visual C++ 运行库。若部署结果中包含 Visual C++ Redistributable 安装程序，应由发布安装程序调用，或说明由用户先安装；仅将安装程序放在目录里不会自动完成运行库安装。
+- **发布资源**：检查 `Excel template` 目录，只分发使用说明和允许公开的空白模板。发布包不应包含个人考勤模板、成员数据、API key 文件 `ai-key.dat` 或其他本地使用数据。安装到已有目录不会自动清理历史文件，因此每次发布应使用新的空目录。
+
+#### 验证与分发
+
+在未安装 Qt、Python 和开发工具的受支持 Windows x64 设备或干净虚拟机上，从发布目录直接启动 `RabbitRoll.exe`，验证文件保存与打开、成员管理、普通排班、Python 脚本排班和 Excel 导出。开启 AI 的版本还应使用测试者自己的 API key 验证 HTTPS 请求及 AI 排班，确认所需 TLS 后端及其运行依赖可用。
+
+完成验证后，可将整个发布目录制作成压缩包，或作为安装程序的输入。当前 CMake 安装步骤生成的是部署目录，不会自动生成安装向导。分发时保留目录结构和许可证文件。
 
 ### 开启或关闭 AI 排班
 
