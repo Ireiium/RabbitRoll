@@ -1,8 +1,76 @@
-# RabbitRoll（兔子排班）
+# RabbitRoll兔子排班
 
-RabbitRoll（兔子排班）是一款专注于解决团队排班问题的软件，尤其适用于大学生团队管理。它能够高效处理诸如高校学生会成员值班安排等繁琐事务，显著减少工作量。
+RabbitRoll兔子排班是一款专注于解决团队排班问题的软件，尤其适用于大学生团队管理。它能够高效处理诸如高校学生会成员值班安排等繁琐事务，显著减少工作量。
 
 程序支持平台：Windows。
+
+## 构建说明
+
+### 构建环境
+
+- **操作系统**：Windows x64。
+- **Qt**：Qt 6.8.3，需安装 Core、Widgets、Concurrent、Network 模块。
+- **编译器**：MSVC 2022 x64，搭配 Qt 的 `msvc2022_64` 套件。
+- **构建工具**：Qt Creator，或 CMake GUI 配合 Visual Studio；CMake 版本需为 3.19 或更高。
+- **Python**：编译源码需要完整的 64 位 Python 3.12 开发环境，包含解释器、开发头文件和链接库。
+
+仓库中的 `libs` 目录提供 ElaWidgetTools、QXlsx 和 pybind11，`pythonembed/Windows` 已包含运行时使用的 Python 环境。运行构建、打包后的程序及排班脚本，无需另外安装 Python。
+
+### 使用 Qt Creator 构建
+
+1. 使用 Qt Creator 打开项目根目录的 `CMakeLists.txt`。
+2. 选择 **Qt 6.8.3 / MSVC 2022 x64** 构建套件。
+3. 在 CMake 配置中确认 Python 3.12 的路径；若无法自动找到，可设置 `Python3_ROOT_DIR` 为 Python 3.12 的安装目录。
+4. 根据需要设置 `ENABLE_AI`，重新运行 CMake，再构建项目（见**开启或关闭 AI 排班**）。
+
+### 使用 CMake GUI 和 Visual Studio 构建
+
+1. 打开 CMake GUI，在 **Where is the source code** 中选择源码主根文件夹，即 `CMakeLists.txt` 所在文件夹。在根目录创建 `build` 文件夹，并在 **Where to build the binaries** 中选择该文件夹。
+2. 点击【Add Entry】，名称输入 `CMAKE_PREFIX_PATH`，类型选择 `PATH`，Value 选择 Qt 文件夹下的 `6.8.3/msvc2022_64` 文件夹，最后点击【OK】。
+3. 点击【Configure】，选择 **Visual Studio 17 2022**，平台选择 **x64**，再点击【Finish】。若提示未找到 Python 开发环境，添加 `Python3_ROOT_DIR`，指向完整的 Python 3.12 安装目录，再次点击【Configure】。
+4. 如需 AI 排班，确保勾选 `ENABLE_AI`；不需要则取消勾选。确认配置成功后，点击【Generate】。
+5. 完成后点击【Open Project】，进入 Visual Studio。
+6. 将 `RabbitRoll` 设为启动项目，并切换为 **Release / x64** 配置。
+7. 选中 `RabbitRoll` 项目，按下 **Ctrl+B** 开始编译，也可以右键项目选择【生成】。使用上述构建目录时，当前源码的程序输出位置为 `build/src/Release/RabbitRoll.exe`。
+
+当前 CMake 默认会在构建后自动部署 Qt 运行库，并复制 ElaWidgetTools 动态库、Python 环境、脚本、Excel 模板和许可证文件。若程序提示缺少 `ElaWidgetTools.dll`，可将 `libs/ElaWidgetTools/bin` 中的对应文件拷贝至 `RabbitRoll.exe` 所在文件夹。也可以使用 Qt Creator 打开项目，完成构建后直接运行。
+
+### 打包与部署
+
+若需将程序分发至其他设备，可以在 CMake GUI 中设置 `CMAKE_INSTALL_PREFIX`，重新配置、生成后，在 Visual Studio 中构建 `INSTALL` 项目。CMake 会将程序、运行库和资源部署到指定目录。
+
+也可以按以下步骤，使用 Qt 的 `windeployqt` 工具手动打包：
+
+1. 将编译生成的 `RabbitRoll.exe`、`python312.dll`、`ElaWidgetTools.dll`，以及 `scripts`、`pythonembed`、`Excel template` 和 `licenses` 文件夹，拷贝至一个独立的空文件夹，例如 `D:/RabbitRoll`。这些文件应取自同一次 Release 构建的输出目录。
+2. 进入本次构建所用 Qt 的 `6.8.3/msvc2022_64/bin` 文件夹，右键点击【在终端中打开】，输入以下部署命令并回车。请将示例路径替换为实际的程序路径。
+
+```powershell
+.\windeployqt.exe --release "D:\RabbitRoll\RabbitRoll.exe"
+```
+
+完成后，程序打包完成，可直接打开 `RabbitRoll.exe` 运行。分发时请保留整个打包目录中的运行库和资源文件。
+
+### 开启或关闭 AI 排班
+
+CMake 选项 **`ENABLE_AI`** 控制是否将 AI 排班功能编译进程序，默认值为 `ON`。选项定义在 `src/CMakeLists.txt` 中：
+
+```cmake
+option(ENABLE_AI "Build with DeepSeek AI scheduling support" ON)
+```
+
+| 配置 | 构建结果 |
+| --- | --- |
+| 勾选 `ENABLE_AI`（`ON`） | 编译 AI 服务、DeepSeek 接口及 API key 存储代码，提供 AI 排班功能和相关设置。使用前仍需用户自行填写 API key。 |
+| 取消勾选 `ENABLE_AI`（`OFF`） | 不编译上述 AI 服务代码，移除相关设置项，不提供 AI 排班能力；普通排班和 Python 脚本排班仍可使用。 |
+
+**开启 AI 支持后**，CMake 会定义 `ENABLE_AI_SUPPORT` 编译宏，并为 AI 功能链接 Qt Network 和 Windows Crypt32。用户需进入【设置】→【启用 AI 排班】，打开功能开关，填写自己的 DeepSeek API key，按回车或离开输入框保存，再使用【AI 排班】。构建时开启 AI 支持不会自动提供 API key，也不会自动打开程序内的 AI 开关。
+
+**开启或关闭 AI 支持的操作方式：**
+
+- **Qt Creator**：在项目的构建设置中找到 CMake 配置项 `ENABLE_AI`，勾选或取消勾选，重新运行 CMake 后构建。
+- **CMake GUI + Visual Studio**：在 CMake GUI 中勾选或取消勾选 `ENABLE_AI`，依次点击【Configure】和【Generate】，再回到 Visual Studio 重新构建。
+
+`ENABLE_AI` 是编译选项，关闭后无法仅通过程序设置恢复 AI 功能，需要重新构建开启版。关闭 AI 后，当前 CMake 构建仍需要 Qt Network 和 Python 3.12 开发环境。
 
 ## 使用 RabbitRoll 的工作流
 
