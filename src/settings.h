@@ -43,8 +43,9 @@ public:
     void setEnableAI(bool enable);
     QString getAIModel() const;
     void setAIModel(const QString& modelName);
-    QString getAPI() const;
-    void setAPI(const QString& key);
+    QString getAPI(QString* error = nullptr) const;
+    bool setAPI(const QString& key, QString* error = nullptr);
+    QString apiKeyFilePath() const;
 #endif
 
 private:
@@ -54,4 +55,7 @@ private:
     Settings& operator=(const Settings&) = delete;
 
     QSettings* m_settings;
+#ifdef ENABLE_AI_SUPPORT
+    QString _apiKeyFilePath;
+#endif
 };

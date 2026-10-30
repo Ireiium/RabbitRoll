@@ -1,4 +1,4 @@
-option(ENABLE_AI "Build with DeepSeek AI scheduling support" OFF)
+option(ENABLE_AI "Build with DeepSeek AI scheduling support" ON)
 
 if(ENABLE_AI)
     add_definitions(-DENABLE_AI_SUPPORT)
@@ -109,8 +109,6 @@ qt_add_executable(RabbitRoll
     undocommands.cpp
     settings.h
     settings.cpp
-    lock.h
-    lock.cpp
 )
 
 add_library(RabbitRollQXlsx STATIC IMPORTED GLOBAL)
@@ -130,8 +128,10 @@ if(ENABLE_AI)
         AIServiceInterface.cpp
         deepseekservice.h
         deepseekservice.cpp
+        apikeystore.h
+        apikeystore.cpp
     )
-    target_link_libraries(RabbitRoll PRIVATE Qt::Network)
+    target_link_libraries(RabbitRoll PRIVATE Qt::Network Crypt32)
 endif()
 
 if(WIN32)

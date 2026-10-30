@@ -31,6 +31,6 @@ set( ElaWidgetTools_LIBRARY_DIRS ${PACKAGE_PREFIX_DIR}/lib)
 check_required_components(ElaWidgetTools)
 
 include(CMakeFindDependencyMacro)
-find_dependency(Qt6 6.8.3 EXACT COMPONENTS Widgets)
+find_dependency(Qt6 6.8.3 COMPONENTS Widgets)
 
 include("${CMAKE_CURRENT_LIST_DIR}/ElaWidgetToolsTargets.cmake")

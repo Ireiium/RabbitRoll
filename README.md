@@ -29,7 +29,7 @@ RabbitRoll兔子排班是一款专注于解决团队排班问题的软件，尤�
 
 1. 打开 CMake GUI，在 **Where is the source code** 中选择源码主根文件夹，即 `CMakeLists.txt` 所在文件夹。在根目录创建 `build` 文件夹，并在 **Where to build the binaries** 中选择该文件夹。
 2. 点击【Add Entry】，名称输入 `CMAKE_PREFIX_PATH`，类型选择 `PATH`，Value 选择 Qt 文件夹下的 `6.8.3/msvc2022_64` 文件夹，最后点击【OK】。
-3. 点击【Configure】，选择 **Visual Studio 17 2022**，平台选择 **x64**，再点击【Finish】。若提示未找到 Python 开发环境，添加 `Python3_ROOT_DIR`，指向完整的 Python 3.12 安装目录，再次点击【Configure】。
+3. 点击【Configure】，选择 **Visual Studio**，平台选择 **x64**，再点击【Finish】。若提示未找到 Python 开发环境，添加 `Python3_ROOT_DIR`，指向完整的 Python 3.12 安装目录，再次点击【Configure】。
 4. 如需 AI 排班，确保勾选 `ENABLE_AI`；不需要则取消勾选。确认配置成功后，点击【Generate】。
 5. 完成后点击【Open Project】，进入 Visual Studio。
 6. 将 `RabbitRoll` 设为启动项目，并切换为 **Release / x64** 配置。
@@ -55,7 +55,12 @@ RabbitRoll兔子排班是一款专注于解决团队排班问题的软件，尤�
 - **Qt 运行库与插件**：保留部署工具生成的目录结构，包括 `platforms/qwindows.dll` 等运行所需插件和生成的 `qt.conf`。不得混用 Debug 与 Release 文件，或混用其他 Qt 套件中的 DLL。
 - **第三方依赖与 Python**：确认安装目录包含 ElaWidgetTools 动态库、`python312.dll`、`pythonembed`、示例脚本及许可文件。Qt 部署工具不负责收集全部第三方依赖，不能仅凭部署命令成功就认定发布包完整。
 - **MSVC 运行库**：确认目标系统具备与构建工具链兼容的 x64 Visual C++ 运行库。若部署结果中包含 Visual C++ Redistributable 安装程序，应由发布安装程序调用，或说明由用户先安装；仅将安装程序放在目录里不会自动完成运行库安装。
-- **发布资源**：检查 `Excel template` 目录，只分发使用说明和允许公开的空白模板。发布包不应包含个人考勤模板、成员数据、API key 文件 `ai-key.dat` 或其他本地使用数据。安装到已有目录不会自动清理历史文件，因此每次发布应使用新的空目录。
+- **发布资源**：检查 `excelTemplate` 目录，仅分发使用说明和允许公开的空白模板。
+
+> [!WARNING]
+> 发布包不应包含个人考勤模板、成员数据、API key 文件 `ai-key.dat` 或其他敏感信息。
+>
+> 安装到已有目录不会自动清理历史文件，因此每次发布应使用新的空目录。发布者应在分发前检查发布包内容，并对自行打包、分发的内容负责。
 
 #### 验证与分发
 
@@ -158,7 +163,14 @@ option(ENABLE_AI "Build with DeepSeek AI scheduling support" ON)
 
 RabbitRoll 提供专门的课表读取助手浏览器插件，方便成员快速获取自己的课表。读取课表后以 `.rsch` 格式下载，可以直接导入 RabbitRoll 的个人时间表中。
 
-本浏览器插件目前仅支持 **Edge 和 Google Chrome** 浏览器，目前适配的高校为 **武汉工程大学**。
+本浏览器插件目前仅支持 **Edge 和 Google Chrome** 浏览器
+
+目前已适配的高校如下：
+
+| 适配高校 |
+| --- |
+| 武汉工程大学 |
+
 
 ### 导入与使用
 

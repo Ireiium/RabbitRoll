@@ -26,7 +26,6 @@
 #include "ElaNavigationBar.h"
 #include "settings.h"
 #include "ElaMessageBar.h"
-#include "lock.h"
 
 #ifdef ENABLE_AI_SUPPORT
 #include "AIServiceInterface.h"
@@ -42,6 +41,9 @@ MainWindow::MainWindow(bool hasAI, QWidget* parent)
     setNavBar();
 
 #ifdef ENABLE_AI_SUPPORT
+    connect(_settingPage, &SettingPage::apiKeyChanged, this, [] {
+        AIServiceInterface::instance()->setApiKey(Settings::instance()->getAPI());
+    });
     connect(_settingPage, &SettingPage::enableAIChanged, this, [this](bool enabled) {
         _isAIEnabled = enabled;
         if (enabled && !_aiInitialized) {

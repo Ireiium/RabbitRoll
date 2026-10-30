@@ -3,6 +3,9 @@ build/
 cmake-build-*/
 AImodels/
 
+# User-provided API credentials
+ai-key.dat
+
 # IDE 和编辑器文件
 .vs/
 .qtcreator/
@@ -14,11 +17,11 @@ feature-ai-version/
 
 # Public sync: local settings, credentials and generated artifacts
 build*/
-cmake-build-*/
 .idea/
 *.user
 .gitconfig
 .git-credentials
+ai-key.dat.*
 CMakeUserPresets.json
 .env
 .env.*

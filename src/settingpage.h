@@ -17,6 +17,7 @@ Q_SIGNALS:
 
 #ifdef ENABLE_AI_SUPPORT
 	void enableAIChanged(bool enabled);
+    void apiKeyChanged();
 #endif
 
 public:

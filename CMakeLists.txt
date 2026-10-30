@@ -17,7 +17,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
 
-find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Core Widgets Concurrent Network)
+find_package(Qt6 6.8.3 REQUIRED COMPONENTS Core Widgets Concurrent Network)
 qt_standard_project_setup()
 set(CMAKE_AUTORCC ON)
 

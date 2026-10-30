@@ -329,15 +329,14 @@ void BackendWorker::AISchedule(const QString& userPrompt, const QString& compres
         Q_EMIT aiScheduleFinished(false, {}, "用户中止");
         return;
     }
-
-    if (nameMap.isEmpty()) {
-        Q_EMIT aiScheduleFinished(false, {}, "没有可排班的成员");
+    _aiService = AIServiceInterface::instance();
+    if (!_aiService || !_aiService->hasApiKey()) {
+        Q_EMIT aiScheduleFinished(false, {}, "请先在设置的“启用 AI 排班”下填写并保存 API key。");
         return;
     }
 
-    _aiService = AIServiceInterface::instance();
-    if (!_aiService) {
-        Q_EMIT aiScheduleFinished(false, {}, "AI 服务未初始化");
+    if (nameMap.isEmpty()) {
+        Q_EMIT aiScheduleFinished(false, {}, "没有可排班的成员");
         return;
     }
 

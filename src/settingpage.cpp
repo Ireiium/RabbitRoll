@@ -21,6 +21,10 @@
 #include "scriptengine.h"
 #include "settings.h"
 #include "exceltemplatepicker.h"
+#ifdef ENABLE_AI_SUPPORT
+#include "ElaLineEdit.h"
+#include <QTimer>
+#endif
 
 SettingPage::SettingPage(bool hasAI, QWidget* parent)
     : ElaScrollPage(parent)
@@ -147,12 +151,40 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
     aiDrawer->setDrawerHeader(aiHeader);
 
     QWidget* aiContent = new QWidget(this);
-    QHBoxLayout* aiContentLayout = new QHBoxLayout(aiContent);
+    aiContent->setFixedHeight(50);
+    auto* aiContentLayout = new QHBoxLayout(aiContent);
     aiContentLayout->setContentsMargins(40, 0, 15, 0);
-    ElaText* modelText = new ElaText("模型：DeepSeek v4 flash", 15);
-    modelText->setWordWrap(false);
-    aiContentLayout->addWidget(modelText);
-    aiContentLayout->addStretch();
+    aiContentLayout->addWidget(new ElaText("API key：", 15));
+    auto* apiKeyEdit = new ElaLineEdit(aiContent);
+    apiKeyEdit->setObjectName("aiApiKeyEdit");
+    apiKeyEdit->setEchoMode(QLineEdit::Password);
+    apiKeyEdit->setMaxLength(4096);
+    apiKeyEdit->setIsClearButtonEnable(true);
+    apiKeyEdit->setPlaceholderText("输入后按回车或离开输入框保存");
+    apiKeyEdit->setMinimumWidth(260);
+    apiKeyEdit->setToolTip("加密保存到程序旁的 ai-key.dat；清空后保存可删除密钥。");
+    aiContentLayout->addWidget(apiKeyEdit, 1);
+    QString apiReadError;
+    const auto savedKey = Settings::instance()->getAPI(&apiReadError);
+    apiKeyEdit->setText(savedKey);
+    if (!apiReadError.isEmpty()) {
+        QTimer::singleShot(0, this, [this, apiReadError] {
+            ElaMessageBar::error(ElaMessageBarType::BottomLeft, "读取 API key 失败", apiReadError, 4000, this);
+        });
+    }
+    connect(apiKeyEdit, &QLineEdit::editingFinished, this, [this, apiKeyEdit] {
+        if (!apiKeyEdit->isModified()) return;
+        QString error;
+        const auto key = apiKeyEdit->text().trimmed();
+        if (!Settings::instance()->setAPI(key, &error)) {
+            ElaMessageBar::error(ElaMessageBarType::BottomLeft, "保存失败", error, 4000, this);
+            return;
+        }
+        apiKeyEdit->setText(key);
+        ElaMessageBar::success(ElaMessageBarType::BottomLeft, "成功",
+            key.isEmpty() ? "已清除 API key" : "API key 已保存", 1500, this);
+        Q_EMIT apiKeyChanged();
+    });
     aiDrawer->addDrawer(aiContent);
 
     bool aiEnabledSaved = Settings::instance()->getEnableAI();

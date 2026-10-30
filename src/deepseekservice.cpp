@@ -15,9 +15,6 @@ DeepSeekService::DeepSeekService(QObject* parent)
 QString DeepSeekService::ask(const QString& systemPrompt, const QString& userPrompt,
     const QString& apiKey, const QString& model)
 {
-    if (apiKey.trimmed().isEmpty()) {
-        return "API Error: API key is not configured.";
-    }
     QNetworkRequest request(QUrl("https://api.deepseek.com/chat/completions"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
@@ -78,10 +75,6 @@ QString DeepSeekService::ask(const QString& systemPrompt, const QString& userPro
 QString DeepSeekService::askStreaming(const QString& systemPrompt, const QString& userPrompt,
     const QString& apiKey, const QString& model, bool enableThinking)
 {
-    if (apiKey.trimmed().isEmpty()) {
-        Q_EMIT responseFinished();
-        return "API Error: API key is not configured.";
-    }
     QNetworkRequest request(QUrl("https://api.deepseek.com/chat/completions"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());

@@ -1,6 +1,10 @@
 #include "settings.h"
-#include "lock.h"
 #include "exceltemplates.h"
+#ifdef ENABLE_AI_SUPPORT
+#include "apikeystore.h"
+#include <QCoreApplication>
+#include <QDir>
+#endif
 
 Settings* Settings::instance()
 {
@@ -12,6 +16,9 @@ Settings::Settings(QObject* parent)
     : QObject(parent)
 {
     m_settings = new QSettings("Ireiium", "RabbitRoll", this);
+#ifdef ENABLE_AI_SUPPORT
+    _apiKeyFilePath = QDir(QCoreApplication::applicationDirPath()).filePath("ai-key.dat");
+#endif
 }
 
 Settings::~Settings()
@@ -119,25 +126,26 @@ void Settings::setAIModel(const QString& modelName) {
     m_settings->setValue("AIModel", modelName);
 }
 
-QString Settings::getAPI() const {
-    QString key = qEnvironmentVariable("RABBITROLL_DEEPSEEK_API_KEY").trimmed();
-    if (key.isEmpty()) {
-        key = qEnvironmentVariable("DEEPSEEK_API_KEY").trimmed();
-    }
-    if (!key.isEmpty()) {
-        return key;
-    }
-    const QByteArray encrypted = m_settings->value("AIApiKeyEncrypted").toByteArray();
-    return QString::fromUtf8(deobfuscateKey(encrypted)).trimmed();
+QString Settings::getAPI(QString* error) const {
+    QString key, message;
+    ApiKeyStore(_apiKeyFilePath).load(key, message);
+    if (error) *error = message;
+    return key;
 }
 
-void Settings::setAPI(const QString& key) {
-    const QString trimmedKey = key.trimmed();
-    if (trimmedKey.isEmpty()) {
+bool Settings::setAPI(const QString& key, QString* error) {
+    QString message;
+    const bool saved = ApiKeyStore(_apiKeyFilePath).save(key, message);
+    if (error) *error = message;
+    if (saved) {
         m_settings->remove("AIApiKeyEncrypted");
-    } else {
-        m_settings->setValue("AIApiKeyEncrypted", obfuscateKey(trimmedKey.toUtf8()));
+        m_settings->sync();
     }
+    return saved;
+}
+
+QString Settings::apiKeyFilePath() const {
+    return _apiKeyFilePath;
 }
 #endif
 

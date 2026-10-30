@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <QReadWriteLock>
 
 class AIServiceInterface : public QObject
 {
@@ -13,6 +14,7 @@ public:
 
     void setApiKey(const QString& key);
     void setModel(const QString& model);
+    bool hasApiKey() const;
 
 Q_SIGNALS:
     void aiProgress(const QString& chunk);
@@ -22,4 +24,5 @@ private:
     explicit AIServiceInterface(QObject* parent = nullptr);
     QString m_apiKey;
     QString m_model = "deepseek-v4-flash";
+    mutable QReadWriteLock m_configurationLock;
 };
