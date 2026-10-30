@@ -1,4 +1,4 @@
-option(ENABLE_AI "Build with DeepSeek AI scheduling support" ON)
+option(ENABLE_AI "Build with DeepSeek AI scheduling support" OFF)
 
 if(ENABLE_AI)
     add_definitions(-DENABLE_AI_SUPPORT)
@@ -105,7 +105,7 @@ qt_add_executable(RabbitRoll
     lock.cpp
 )
 
-add_library(RabbitRollQXlsx STATIC IMPORTED)
+add_library(RabbitRollQXlsx STATIC IMPORTED GLOBAL)
 set_target_properties(RabbitRollQXlsx PROPERTIES
     IMPORTED_CONFIGURATIONS "Debug;Release"
     IMPORTED_LOCATION_DEBUG "${PROJECT_SOURCE_DIR}/libs/QXlsx/lib/QXlsxQt6d.lib"
@@ -113,6 +113,7 @@ set_target_properties(RabbitRollQXlsx PROPERTIES
     MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     MAP_IMPORTED_CONFIG_MINSIZEREL Release
     INTERFACE_INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/libs/QXlsx/include"
+    INTERFACE_LINK_LIBRARIES "Qt6::Core;Qt6::Gui"
 )
 
 if(ENABLE_AI)
@@ -156,13 +157,20 @@ add_custom_command(TARGET RabbitRoll POST_BUILD
         "${PROJECT_SOURCE_DIR}/pythonembed/Windows/python312.dll" "$<TARGET_FILE_DIR:RabbitRoll>"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
         "${PROJECT_SOURCE_DIR}/licenses" "$<TARGET_FILE_DIR:RabbitRoll>/licenses"
+    COMMENT "RabbitRoll: deploying libraries, Python and licenses"
+    VERBATIM
+)
+
+# This also runs when no C++ file needs rebuilding, without overwriting user scripts.
+add_custom_target(RabbitRollExampleScripts
     COMMAND "${CMAKE_COMMAND}"
         "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/scripts"
         "-DDESTINATION_DIR=$<TARGET_FILE_DIR:RabbitRoll>/scripts"
         -P "${PROJECT_SOURCE_DIR}/cmake/CopyExampleScripts.cmake"
-    COMMENT "RabbitRoll: deploying libraries, Python, licenses and example scripts"
+    COMMENT "RabbitRoll: checking example scripts"
     VERBATIM
 )
+add_dependencies(RabbitRoll RabbitRollExampleScripts)
 
 option(RABBITROLL_DEPLOY_QT_AFTER_BUILD "Deploy Qt runtime next to the built executable" ON)
 if(RABBITROLL_DEPLOY_QT_AFTER_BUILD)

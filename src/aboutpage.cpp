@@ -122,7 +122,7 @@ AboutPage::AboutPage(QWidget* parent)
     QVBoxLayout* credit = new QVBoxLayout(area3);
 
     credit->addWidget(new ElaText("<b>致谢</b>", 20));
-    ElaText* wit = new ElaText("武汉工程大学校团委组织部", 18);
+    ElaText* wit = new ElaText("参与测试与反馈的用户", 18);
     credit->addWidget(wit);
 
     ElaScrollPageArea* area4 = new ElaScrollPageArea(container);

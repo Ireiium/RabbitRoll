@@ -28,15 +28,16 @@ IdleMatchService::IdleMatchService(QObject *parent)
 
     //后台运算完成时，写入缓存并通知UI
     connect(&_watcher, &QFutureWatcher<QHash<QString, QStringList>>::finished, this, [=]() {
-        if (_abortPending.loadRelaxed() > 0) {
-            _isCalculating.store(false);
+        _futureActive = false;
+        if (_abortPending.loadRelaxed() > 0 || _restartPending) {
+            if (!_calcTimer->isActive()) _calcTimer->start(0);
             return;
         }
 
         _uiCache = _watcher.result();
 
         auto* eComp = ComponentManager::instance()->getComponent<EditorDutyComponent>();
-        eComp->getController()->applyCalculationResults(_uiCache);
+        if (eComp) eComp->getController()->applyCalculationResults(_uiCache);
 
         _isCalculating.store(false);
         Q_EMIT precalculationFinished();
@@ -45,7 +46,12 @@ IdleMatchService::IdleMatchService(QObject *parent)
 }
 
 IdleMatchService::~IdleMatchService()
-{}
+{
+    _calcTimer->stop();
+    _abortPending.storeRelaxed(1);
+    disconnect(&_watcher, nullptr, this, nullptr);
+    _watcher.waitForFinished();
+}
 
 MemberBitSchedule::MemberBitSchedule() {
     for (int d = 0; d < 7; ++d) {
@@ -96,23 +102,31 @@ TimeMask IdleMatchService::timeStringToMask(const QString & timeRange) {
 }
 
 void IdleMatchService::onDataChanged() {
-    _calcTimer->start();
+    _restartPending = true;
+    _abortPending.storeRelaxed(1);
+    _isCalculating.store(true);
+    _calcTimer->start(300);
 }
 
 void IdleMatchService::realDoCalculation() {
-    if (_watcher.isRunning()) {
+    if (_futureActive) {
         _abortPending.storeRelaxed(1);//发送中止信号给当前正在跑的旧线程
-        _calcTimer->start(50);
         return;
     }
     auto* eComp = ComponentManager::instance()->getComponent<EditorDutyComponent>();
     auto* mComp = ComponentManager::instance()->getComponent<MemberInfoComponent>();
-    if (!eComp || !mComp) return;//疑似组件还没初始化完成的时候就会跑一次，所以防御返回
+    if (!eComp || !mComp) {
+        _restartPending = false;
+        _isCalculating.store(false);
+        return;
+    }
 
     auto* eController = eComp->getController();
     auto* mController = mComp->getController();
 
     _isCalculating.store(true);
+    _restartPending = false;
+    _futureActive = true;
     _abortPending.storeRelaxed(0);
 
     ProjectSetting* settings = ProjectSetting::instance();
@@ -170,6 +184,7 @@ QHash<QString, QStringList> IdleMatchService::runPrecalculation(
     int editorMode)
 {
     QHash<QString, QStringList> resultCache;
+    if (!startDate.isValid() || !endDate.isValid() || startDate > endDate) return resultCache;
     static QMap<QString, int> weekTextToNum = {
         {"周一", 1}, {"周二", 2}, {"周三", 3}, {"周四", 4}, {"周五", 5}, {"周六", 6}, {"周日", 7}
     };
@@ -184,31 +199,14 @@ QHash<QString, QStringList> IdleMatchService::runPrecalculation(
         bool isDateOutOfRange = false;
         if (editorMode == 1) {
             targetDate = QDate::fromString(colName, "yyyy-MM-dd");
-            if (isEnableDateSearch && (targetDate < startDate || targetDate > endDate)) {
+            if (!targetDate.isValid() || (isEnableDateSearch && (targetDate < startDate || targetDate > endDate))) {
                 isDateOutOfRange = true;
             }
         }
 
-        //预算周掩码
-        uint64_t requiredWeekMask = 0;
-        int totalRequiredWeeks = 0;
-
-        if (editorMode != 1) { //周模式才需要算掩码
-            int targetDayOfWeek = weekTextToNum.value(colName, -1);
-            if (targetDayOfWeek != -1) {
-                QDate tempDate = startDate;
-                while (tempDate <= endDate) {
-                    if (tempDate.dayOfWeek() == targetDayOfWeek) {
-                        int weekIdx = baseDate.daysTo(tempDate) / 7;
-                        if (weekIdx >= 0 && weekIdx < 64) {
-                            requiredWeekMask |= (1ULL << weekIdx);
-                            totalRequiredWeeks++;
-                        }
-                    }
-                    tempDate = tempDate.addDays(1);
-                }
-            }
-        }
+        int targetDayOfWeek = weekTextToNum.value(colName, -1);
+        bool hasRequiredDay = editorMode == 1 || (targetDayOfWeek >= 1 &&
+            startDate.addDays((targetDayOfWeek - startDate.dayOfWeek() + 7) % 7) <= endDate);
 
         for (const QString& timeStr : editorTimes) {
             QString cacheKey = QString("%1_%2_%3").arg(editorMode).arg(colName).arg(timeStr);
@@ -219,8 +217,13 @@ QHash<QString, QStringList> IdleMatchService::runPrecalculation(
                 continue;
             }
             TimeMask queryMask = timeStringToMask(timeStr);
+            if (queryMask.none() || !hasRequiredDay) {
+                resultCache[cacheKey] = availableNames;
+                continue;
+            }
 
             for (const auto& member : members) {
+                if (service->_abortPending.loadRelaxed() > 0) return {};
                 if (editorMode == 1) {
                     TimeMask dayMask = member.dailyMask.contains(targetDate) ?
                         member.dailyMask.value(targetDate) :
@@ -234,13 +237,11 @@ QHash<QString, QStringList> IdleMatchService::runPrecalculation(
                     int dayOfWeek = weekTextToNum.value(colName, -1);
                     if (dayOfWeek >= 1 && dayOfWeek <= 7) {
                         int conflictWeeks = 0;
-                        const auto& weekData = member.weeklyMask[dayOfWeek - 1];
-
-                        for (int w = 0; w < 64; ++w) {
-                            if (requiredWeekMask & (1ULL << w)) {
-                                if ((weekData[w] & queryMask) != queryMask) {
-                                    conflictWeeks++;
-                                }
+                        // Dates remain accurate when projects span more than 64 weeks.
+                        for (auto it = member.dailyMask.constBegin(); it != member.dailyMask.constEnd(); ++it) {
+                            if (it.key() >= startDate && it.key() <= endDate && it.key().dayOfWeek() == dayOfWeek &&
+                                (it.value() & queryMask) != queryMask) {
+                                if (++conflictWeeks > tolerance) break;
                             }
                         }
                         if (conflictWeeks <= tolerance) {

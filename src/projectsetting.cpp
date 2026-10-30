@@ -13,6 +13,7 @@ ProjectSetting* ProjectSetting::instance() {
 ProjectSetting::ProjectSetting(QObject* parent)
 	: QObject(parent), _toleranceValue(0)
 {
+    reset();
 }
 
 ProjectSetting::~ProjectSetting()

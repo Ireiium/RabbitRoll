@@ -20,6 +20,7 @@ Q_SIGNALS:
 public:
     enum class SaveStatus { Success, NeedPath, IOError };
     static ProjectManager* instance();
+    ~ProjectManager() override;
 
     bool isDirty() const;
     void setDirty(bool dirty);
@@ -45,6 +46,8 @@ private:
     QString version;
     bool _isDirty{ false };
     QString _currentFilePath;
+    quint64 _changeRevision{ 0 };
+    quint64 _projectGeneration{ 0 };
 
     QJsonObject serializeData();
     void deserializeData(const QJsonObject& doc);

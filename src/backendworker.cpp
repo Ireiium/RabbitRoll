@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QTime>
 
 #ifdef ENABLE_AI_SUPPORT
 #include "AIServiceInterface.h"
@@ -60,10 +61,17 @@ void BackendWorker::batchMembersWithFormat(const QStringList& lines, const QStri
 
 void BackendWorker::scheduleImport(const QJsonObject& json, QDate startDate) {
     QJsonObject schedule;
+    const auto validTimeRange = [](const QString& value) {
+        const QStringList parts = value.split('-');
+        if (parts.size() != 2) return false;
+        const QTime start = QTime::fromString(parts[0], "HH:mm");
+        const QTime end = QTime::fromString(parts[1], "HH:mm");
+        return start.isValid() && end.isValid() && start < end;
+    };
     QString dataType = json["dataType"].toString();
     if (dataType == "course_schedule") {
         QString school = json["school"].toString();
-        if (school == "jwxt.wit.edu.cn") {
+        if (school == "jwxt.wit.edu.cn" && startDate.isValid() && startDate.dayOfWeek() == 1) {
             struct TimeBlock {
                 QString timeStr;
                 QList<int> sections;
@@ -75,10 +83,22 @@ void BackendWorker::scheduleImport(const QJsonObject& json, QDate startDate) {
                 QString secStr = obj["section"].toVariant().toString();
                 QString timeStr = QString("%1-%2").arg(
                     obj["startTime"].toString(), obj["endTime"].toString());
+                if (!validTimeRange(timeStr)) continue;
 
                 QList<int> pList;
-                if (secStr.length() == 2) {
+                if (obj["sections"].isArray()) {
+                    for (const auto& section : obj["sections"].toArray()) {
+                        if (section.toInt() > 0 && section.toInt() <= 30) pList.append(section.toInt());
+                    }
+                }
+                else if (secStr.length() == 1) {
+                    pList << secStr.toInt();
+                }
+                else if (secStr.length() == 2 && secStr != "10" && secStr != "11") {
                     pList << secStr.left(1).toInt() << secStr.right(1).toInt();
+                }
+                else if (secStr == "10" || secStr == "11") {
+                    pList << secStr.toInt();
                 }
                 else {
                     for (int i = 0; i + 1 < secStr.length(); i += 2) {
@@ -113,7 +133,9 @@ void BackendWorker::scheduleImport(const QJsonObject& json, QDate startDate) {
                     continue;
 
                 int dayOfWeek = course["dayOfWeek"].toInt();
+                if (dayOfWeek < 1 || dayOfWeek > 7) continue;
                 for (const QJsonValue& w : course["weeks"].toArray()) {
+                    if (w.toInt() < 1 || w.toInt() > 64) continue;
                     QString dateStr = startDate
                         .addDays((w.toInt() - 1) * 7 + (dayOfWeek - 1))
                         .toString(Qt::ISODate);
@@ -130,7 +152,13 @@ void BackendWorker::scheduleImport(const QJsonObject& json, QDate startDate) {
     else if (dataType == "schedule") {
         QJsonObject scheduleData = json["scheduleData"].toObject();
         for (auto it = scheduleData.begin(); it != scheduleData.end(); ++it) {
-            schedule[it.key()] = it.value().toObject();
+            if (!QDate::fromString(it.key(), Qt::ISODate).isValid() || !it.value().isObject()) continue;
+            QJsonObject times;
+            const QJsonObject source = it.value().toObject();
+            for (auto time = source.begin(); time != source.end(); ++time) {
+                if (validTimeRange(time.key()) && time.value().isBool()) times[time.key()] = time.value();
+            }
+            if (!times.isEmpty()) schedule[it.key()] = times;
         }
     }
 
@@ -352,7 +380,7 @@ void BackendWorker::AISchedule(const QString& userPrompt, const QString& compres
         if (aiResponse.endsWith("```")) aiResponse.chop(3);
     }
 
-    int firstBrace = aiResponse.lastIndexOf('{');
+    int firstBrace = aiResponse.indexOf('{');
     int lastBrace = aiResponse.lastIndexOf('}');
 
     if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
@@ -388,16 +416,25 @@ void BackendWorker::AISchedule(const QString& userPrompt, const QString& compres
             QString realKey = taskSlotMap.value(slotDesc);
             if (realKey.isEmpty()) continue;
 
+            if (!it.value().isArray()) {
+                Q_EMIT aiScheduleFinished(false, {}, "AI返回的任务内容不是成员列表");
+                return;
+            }
             QJsonArray arr = it.value().toArray();
             QList<QUuid> uuids;
             for (int i = 0; i < arr.size(); ++i) {
                 QString name = arr[i].toString();
-                if (nameMap.contains(name))
+                if (nameMap.contains(name) && !uuids.contains(nameMap.value(name)))
                     uuids.append(nameMap.value(name));
             }
             finalResults.insert(realKey, uuids);
         }
-        Q_EMIT aiScheduleFinished(true, finalResults, "");
+        if (finalResults.isEmpty()) {
+            Q_EMIT aiScheduleFinished(false, {}, "AI未返回任何有效任务槽");
+        }
+        else {
+            Q_EMIT aiScheduleFinished(true, finalResults, "");
+        }
     }
     else {
         qDebug() << "JSON 解析失败:" << error.errorString();

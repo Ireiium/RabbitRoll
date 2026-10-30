@@ -12,6 +12,9 @@ EditorDutyComponent::EditorDutyComponent(QObject* parent)
     _view->setModel(_model);
 
     connect(_model, &EditorDutyModel::rowsInserted, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
+    connect(_model, &EditorDutyModel::rowsRemoved, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
+    connect(_model, &EditorDutyModel::columnsInserted, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
+    connect(_model, &EditorDutyModel::columnsRemoved, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
     connect(_model, &EditorDutyModel::modelReset, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
 
     connect(_view, &EditorDutyView::requestDeleteRow, _controller, &EditorDutyController::deleteTimeRow);

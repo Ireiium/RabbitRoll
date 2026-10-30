@@ -1,7 +1,19 @@
 #include "schedulemodel.h"
+#include "memberinfomodel.h"
 #include <QDate>
 #include <QJsonObject>
 #include <algorithm>
+#include <QTime>
+
+namespace {
+bool validTimeRange(const QString& range) {
+    const auto parts = range.split('-');
+    if (parts.size() != 2) return false;
+    const auto start = QTime::fromString(parts[0], "hh:mm");
+    const auto end = QTime::fromString(parts[1], "hh:mm");
+    return start.isValid() && end.isValid() && start < end;
+}
+}
 
 ScheduleModel::ScheduleModel(QObject *parent)
 	: QAbstractTableModel(parent)
@@ -12,22 +24,45 @@ ScheduleModel::~ScheduleModel()
 
 void ScheduleModel::setScheduleData(QStringList* times, QStringList* dates, QMap<QString, QMap<QString, bool>>* data) {
     beginResetModel();
+    _usesMemberBinding = false;
+    _memberModel = nullptr;
+    _boundMemberId = QUuid();
     _timesPtr = times;
     _datesPtr = dates;
     _mapPtr = data;
     endResetModel();
 }
 
+void ScheduleModel::bindMember(MemberInfoModel* model, const QUuid& id) {
+    beginResetModel();
+    _usesMemberBinding = true;
+    _memberModel = model;
+    _boundMemberId = id;
+    resolveScheduleData();
+    endResetModel();
+}
+
+void ScheduleModel::resolveScheduleData() const {
+    if (!_usesMemberBinding) return;
+    auto* member = _memberModel ? _memberModel->getMemberDataPtr(_memberModel->getRowById(_boundMemberId)) : nullptr;
+    _timesPtr = member ? &member->scheduleTimes : nullptr;
+    _datesPtr = member ? &member->scheduleDates : nullptr;
+    _mapPtr = member ? &member->scheduleMap : nullptr;
+}
+
 int ScheduleModel::rowCount(const QModelIndex& parent) const {
-    return _timesPtr ? _timesPtr->count() : 0;
+    resolveScheduleData();
+    return !parent.isValid() && _timesPtr ? _timesPtr->count() : 0;
 }
 
 int ScheduleModel::columnCount(const QModelIndex& parent) const {
-    return _datesPtr ? _datesPtr->count() : 0;
+    resolveScheduleData();
+    return !parent.isValid() && _datesPtr ? _datesPtr->count() : 0;
 }
 
 QVariant ScheduleModel::headerData(int section, Qt::Orientation orientation, int role) const {
-    if (role != Qt::DisplayRole) return QVariant();
+    resolveScheduleData();
+    if (role != Qt::DisplayRole || section < 0) return QVariant();
 
     if (orientation == Qt::Horizontal) {
         if (_datesPtr && section < _datesPtr->count()) {
@@ -46,14 +81,16 @@ QVariant ScheduleModel::headerData(int section, Qt::Orientation orientation, int
 }
 
 QVariant ScheduleModel::data(const QModelIndex& index, int role) const {
-    if (!index.isValid() || !_mapPtr || !_timesPtr || !_datesPtr) return QVariant();
+    resolveScheduleData();
+    if (!index.isValid() || index.model() != this || !_mapPtr || !_timesPtr || !_datesPtr
+        || index.row() >= rowCount() || index.column() >= columnCount()) return QVariant();
 
     QString timeKey = _timesPtr->at(index.row());
     QString dateKey = _datesPtr->at(index.column());
 
     //只有当Delegate请求UserRole时才返回bool
     if (role == Qt::UserRole) {
-        return (*_mapPtr)[dateKey][timeKey];
+        return _mapPtr->value(dateKey).value(timeKey, false);
     }
     return QVariant();
 }
@@ -74,7 +111,9 @@ QVariant ScheduleModel::data(const QModelIndex& index, int role) const {
 //}
 
 void ScheduleModel::addTimeSlot(const QString& newTime, const QModelIndex& index, const int first, const int last) {
+    resolveScheduleData();
 
+    if (!_timesPtr || !_datesPtr || !_mapPtr || !validTimeRange(newTime) || _timesPtr->contains(newTime)) return;
     auto it = std::lower_bound(_timesPtr->begin(), _timesPtr->end(), newTime);
     int insertIdx = std::distance(_timesPtr->begin(), it);
 
@@ -88,8 +127,13 @@ void ScheduleModel::addTimeSlot(const QString& newTime, const QModelIndex& index
 }
 
 void ScheduleModel::addDateSlot(const QString& newDate, const QModelIndex& index, const int first, const int last) {
-    beginInsertColumns(index, first, last);
-    _datesPtr->append(newDate);
+    resolveScheduleData();
+    if (!_timesPtr || !_datesPtr || !_mapPtr || !QDate::fromString(newDate, "yyyy-MM-dd").isValid()
+        || _datesPtr->contains(newDate)) return;
+    auto it = std::lower_bound(_datesPtr->begin(), _datesPtr->end(), newDate);
+    int insertIdx = int(std::distance(_datesPtr->begin(), it));
+    beginInsertColumns(QModelIndex(), insertIdx, insertIdx);
+    _datesPtr->insert(insertIdx, newDate);
     for (const QString& time : *_timesPtr) {
         (*_mapPtr)[newDate][time] = false;
     }
@@ -97,15 +141,19 @@ void ScheduleModel::addDateSlot(const QString& newDate, const QModelIndex& index
 }
 
 QString ScheduleModel::getLastDate() const {
-    return _datesPtr->last();
+    resolveScheduleData();
+    return _datesPtr && !_datesPtr->isEmpty() ? _datesPtr->last() : QString();
 }
 
 QStringList* ScheduleModel::getTimesRow() const {
+    resolveScheduleData();
     return _timesPtr;
 }
 
 bool ScheduleModel::removeRows(int row, int count, const QModelIndex& parent) {
-    if (row<0 || row + count>_timesPtr->count()) return false;
+    resolveScheduleData();
+    if (!_timesPtr || !_mapPtr || parent.isValid() || row < 0 || count <= 0
+        || row > _timesPtr->count() || count > _timesPtr->count() - row) return false;
     beginRemoveRows(parent, row, row + count - 1);
     for (int i = 0; i < count; ++i) {
         QString timeKey = _timesPtr->at(row);
@@ -119,7 +167,9 @@ bool ScheduleModel::removeRows(int row, int count, const QModelIndex& parent) {
 }
 
 bool ScheduleModel::removeColumns(int column, int count, const QModelIndex& parent) {
-    if (column < 0 || column + count > _datesPtr->count()) return false;
+    resolveScheduleData();
+    if (!_datesPtr || !_mapPtr || parent.isValid() || column < 0 || count <= 0
+        || column > _datesPtr->count() || count > _datesPtr->count() - column) return false;
     beginRemoveColumns(parent, column, column + count - 1);
     for (int i = 0; i < count; ++i) {
         QString dateKey = _datesPtr->at(column);
@@ -133,10 +183,11 @@ bool ScheduleModel::removeColumns(int column, int count, const QModelIndex& pare
 }
 
 void ScheduleModel::updateTimeSlot(int row, const QString& newTime) {
-    if (row < 0 || row >= _timesPtr->count()) return;
+    resolveScheduleData();
+    if (!_timesPtr || !_mapPtr || row < 0 || row >= _timesPtr->count() || !validTimeRange(newTime)) return;
 
     QString oldTime = _timesPtr->at(row);
-    if (oldTime == newTime) return;
+    if (oldTime == newTime || _timesPtr->contains(newTime)) return;
     beginResetModel();
 
     for (auto it = _mapPtr->begin(); it != _mapPtr->end(); ++it) {
@@ -158,7 +209,8 @@ void ScheduleModel::updateTimeSlot(int row, const QString& newTime) {
 }
 
 void ScheduleModel::updateDateSlot(int column, QDate newDate) {
-    if (column < 0 || column >= _datesPtr->count()) return;
+    resolveScheduleData();
+    if (!_datesPtr || !_mapPtr || column < 0 || column >= _datesPtr->count() || !newDate.isValid()) return;
 
     QString newDateStr = newDate.toString("yyyy-MM-dd");
     QString oldDateStr = _datesPtr->at(column);
@@ -183,6 +235,7 @@ void ScheduleModel::updateDateSlot(int column, QDate newDate) {
 }
 
 QMap<QString, bool> ScheduleModel::getTimeSlotData(const QString& time) const {
+    resolveScheduleData();
     QMap<QString, bool> data;
     if (!_mapPtr) return data;
     for (auto it = _mapPtr->begin(); it != _mapPtr->end(); ++it) {
@@ -194,11 +247,14 @@ QMap<QString, bool> ScheduleModel::getTimeSlotData(const QString& time) const {
 }
 
 QMap<QString, bool> ScheduleModel::getDateSlotData(const QString& date) const {
+    resolveScheduleData();
     if (_mapPtr && _mapPtr->contains(date)) return _mapPtr->value(date);
     return QMap<QString, bool>();
 }
 
 void ScheduleModel::restoreTimeSlot(const QString& time, const QMap<QString, bool>& data) {
+    resolveScheduleData();
+    if (!_timesPtr || !_datesPtr || !_mapPtr || !validTimeRange(time)) return;
 
     beginResetModel();
     if (!_timesPtr->contains(time)) {
@@ -215,6 +271,8 @@ void ScheduleModel::restoreTimeSlot(const QString& time, const QMap<QString, boo
 }
 
 void ScheduleModel::restoreDateSlot(const QString& date, const QMap<QString, bool>& data) {
+    resolveScheduleData();
+    if (!_timesPtr || !_datesPtr || !_mapPtr || !QDate::fromString(date, "yyyy-MM-dd").isValid()) return;
 
     beginResetModel();
     if (!_datesPtr->contains(date)) {
@@ -235,6 +293,8 @@ void ScheduleModel::restoreDateSlot(const QString& date, const QMap<QString, boo
 }
 
 void ScheduleModel::updateDateSlotByString(const QString& oldDateStr, const QDate& newDate) {
+    resolveScheduleData();
+    if (!_datesPtr) return;
     int column = _datesPtr->indexOf(oldDateStr);
 
     if (column != -1) {
@@ -243,7 +303,8 @@ void ScheduleModel::updateDateSlotByString(const QString& oldDateStr, const QDat
 }
 
 void ScheduleModel::toggleStateByString(const QString& dateKey, const QString& timeKey) {
-    if (!_mapPtr || !_mapPtr->contains(dateKey) || !(*_mapPtr)[dateKey].contains(timeKey)) return;
+    resolveScheduleData();
+    if (!_mapPtr || !_timesPtr || !_datesPtr || !_mapPtr->contains(dateKey) || !(*_mapPtr)[dateKey].contains(timeKey)) return;
     (*_mapPtr)[dateKey][timeKey] = !(*_mapPtr)[dateKey][timeKey];
 
     int row = _timesPtr->indexOf(timeKey);
@@ -255,6 +316,8 @@ void ScheduleModel::toggleStateByString(const QString& dateKey, const QString& t
 }
 
 void ScheduleModel::removeTimeSlotByString(const QString& time) {
+    resolveScheduleData();
+    if (!_timesPtr) return;
     int row = _timesPtr->indexOf(time);
     if (row >= 0) {
         removeRows(row, 1, QModelIndex());
@@ -262,6 +325,8 @@ void ScheduleModel::removeTimeSlotByString(const QString& time) {
 }
 
 void ScheduleModel::removeDateSlotByString(const QString& date) {
+    resolveScheduleData();
+    if (!_datesPtr) return;
     int col = _datesPtr->indexOf(date);
     if (col >= 0) {
         removeColumns(col, 1, QModelIndex());
@@ -269,6 +334,7 @@ void ScheduleModel::removeDateSlotByString(const QString& date) {
 }
 
 QString ScheduleModel::getFullDateString(int column) const {
+    resolveScheduleData();
     if (_datesPtr && column >= 0 && column < _datesPtr->count()) {
         return _datesPtr->at(column);
     }
@@ -276,7 +342,8 @@ QString ScheduleModel::getFullDateString(int column) const {
 }
 
 void ScheduleModel::setCellStateByString(const QString& dateKey, const QString& timeKey, bool state) {
-    if (_mapPtr->contains(dateKey)) {
+    resolveScheduleData();
+    if (_mapPtr && _timesPtr && _datesPtr && _datesPtr->contains(dateKey) && _timesPtr->contains(timeKey)) {
         (*_mapPtr)[dateKey][timeKey] = state;
         int col = _datesPtr->indexOf(dateKey);
         int row = _timesPtr->indexOf(timeKey);
@@ -288,59 +355,44 @@ void ScheduleModel::setCellStateByString(const QString& dateKey, const QString& 
 }
 
 bool ScheduleModel::checkConflict(const QJsonObject& importedData) const {
+    resolveScheduleData();
+    if (!_mapPtr) return false;
     for (auto it = importedData.begin(); it != importedData.end(); ++it) {
-        QString dateKey = it.key();
-        if (!_mapPtr->contains(dateKey)) continue;
-
-        QJsonObject timeObj = it.value().toObject();
+        const auto existing = _mapPtr->constFind(it.key());
+        if (existing == _mapPtr->constEnd()) continue;
+        const auto timeObj = it.value().toObject();
         for (auto timeIt = timeObj.begin(); timeIt != timeObj.end(); ++timeIt) {
-            QString timeKey = timeIt.key();
-            //如果新课表在这个时间点有课，且现有数据这个时间点也为true，则存在冲突
-            if (timeIt.value().toBool() && _mapPtr->value(dateKey).value(timeKey, false) == true) {
-                return true;
-            }
+            if (timeIt.value().isBool() && existing->contains(timeIt.key())
+                && existing->value(timeIt.key()) != timeIt.value().toBool()) return true;
         }
     }
     return false;
 }
+
 void ScheduleModel::mergeSchedule(const QJsonObject& importedData, bool overwrite) {
+    resolveScheduleData();
+    if (!_timesPtr || !_datesPtr || !_mapPtr) return;
     beginResetModel();
-
     for (auto it = importedData.begin(); it != importedData.end(); ++it) {
-        QString dateKey = it.key();
-        QJsonObject timeObj = it.value().toObject();
-        if (!_datesPtr->contains(dateKey)) {
-            _datesPtr->append(dateKey);
-        }
+        const QString dateKey = it.key();
+        if (!QDate::fromString(dateKey, "yyyy-MM-dd").isValid() || !it.value().isObject()) continue;
+        const auto timeObj = it.value().toObject();
         for (auto timeIt = timeObj.begin(); timeIt != timeObj.end(); ++timeIt) {
-            QString timeKey = timeIt.key();
-
-            if (!_timesPtr->contains(timeKey)) {
-                _timesPtr->append(timeKey);
-            }
-            if (!_mapPtr->contains(dateKey)) {
-                (*_mapPtr)[dateKey] = QMap<QString, bool>();
-            }
-            for (const QString& d : *_datesPtr) {
-                if (!(*_mapPtr)[d].contains(timeKey)) {
-                    (*_mapPtr)[d][timeKey] = false;
-                }
-            }
-            bool isBusy = timeIt.value().toBool();
-            if (isBusy) {
-                if ((*_mapPtr)[dateKey][timeKey] == true && !overwrite) {
-                    continue;
-                }
-                (*_mapPtr)[dateKey][timeKey] = true;
-            }
+            const QString timeKey = timeIt.key();
+            if (!validTimeRange(timeKey) || !timeIt.value().isBool()) continue;
+            const bool hasExisting = _mapPtr->contains(dateKey) && _mapPtr->value(dateKey).contains(timeKey);
+            if (!_datesPtr->contains(dateKey)) _datesPtr->append(dateKey);
+            if (!_timesPtr->contains(timeKey)) _timesPtr->append(timeKey);
+            if (!hasExisting || overwrite) (*_mapPtr)[dateKey][timeKey] = timeIt.value().toBool();
         }
     }
-    std::sort(_datesPtr->begin(), _datesPtr->end(), [](const QString& a, const QString& b) {
-            return a < b;
-        });
-    std::sort(_timesPtr->begin(), _timesPtr->end(), [](const QString& a, const QString& b) {
-            return a < b;
-        });
+    for (const QString& date : *_datesPtr) {
+        for (const QString& time : *_timesPtr) {
+            if (!(*_mapPtr)[date].contains(time)) (*_mapPtr)[date][time] = false;
+        }
+    }
+    std::sort(_datesPtr->begin(), _datesPtr->end());
+    std::sort(_timesPtr->begin(), _timesPtr->end());
     endResetModel();
 }
 
@@ -361,7 +413,9 @@ void ScheduleModel::mergeSchedule(const QJsonObject& importedData, bool overwrit
 //}
 
 QJsonObject ScheduleModel::exportScheduleData() const {
+    resolveScheduleData();
     QJsonObject scheduleObj;
+    if (!_timesPtr || !_datesPtr || !_mapPtr) return scheduleObj;
 
     for (const QString& dateKey : *_datesPtr) {
         if (_mapPtr->contains(dateKey)) {

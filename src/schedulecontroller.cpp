@@ -6,6 +6,8 @@
 #include <QMessageBox>
 #include "undocommands.h"
 #include "memberinfocontroller.h"
+#include <QTime>
+#include "componentmanager.h"
 
 ScheduleController::ScheduleController(ScheduleModel* model, ScheduleView* view, QObject* parent)
     : QObject(parent), _model(model), _view(view)
@@ -22,7 +24,9 @@ void ScheduleController::setupView(QLayout* layout) {
 }
 
 void ScheduleController::requestToggleState(const QModelIndex& index) {
-    if (!index.isValid() || !_model || !_mController) return;
+    if (!index.isValid() || !_model || !_mController || _currentMemberId.isNull()
+        || index.model() != _model || index.row() >= _model->rowCount()
+        || index.column() >= _model->columnCount()) return;
 
     QString date = _model->getFullDateString(index.column());
     QString time = _model->getTimesRow()->at(index.row());
@@ -31,7 +35,7 @@ void ScheduleController::requestToggleState(const QModelIndex& index) {
 }
 
 void ScheduleController::addNextDay() {
-    if (!_model) return;
+    if (!_model || !_mController || _currentMemberId.isNull()) return;
 
     QString nextDateStr;
     int col = _model->columnCount();
@@ -58,8 +62,10 @@ void ScheduleController::addNextDay() {
 }
 
 void ScheduleController::addTimeSlot(const int hour1, const int minute1, const int hour2, const int minute2) {
+    if (!_model || !_mController || _currentMemberId.isNull() || !_model->getTimesRow()) return;
     QString time = QString::asprintf("%02d:%02d-%02d:%02d", hour1, minute1, hour2, minute2);
-    if (hour1 > hour2 || (hour1 == hour2 && minute1 > minute2)) {
+    if (!QTime(hour1, minute1).isValid() || !QTime(hour2, minute2).isValid()
+        || QTime(hour1, minute1) >= QTime(hour2, minute2)) {
         qDebug() << "时间不合法";
         addNewTimeRowFail(RTypies::Message::TimeIsNotValid);
     }
@@ -80,10 +86,16 @@ int ScheduleController::rowCount() const {
 }
 
 void ScheduleController::onMemberDataSelected(void* data) {
-    if (!data || !_model) return;
+    if (!_model) return;
+    if (!data) {
+        _currentMemberId = QUuid();
+        _model->setScheduleData(nullptr, nullptr, nullptr);
+        return;
+    }
     auto* memberData = static_cast<MemberInfoModel::MemberData*>(data);
     _currentMemberId = memberData->id;
-    _model->setScheduleData(&memberData->scheduleTimes, &memberData->scheduleDates, &memberData->scheduleMap);
+    auto* members = ComponentManager::instance()->getComponent<MemberInfoComponent>();
+    _model->bindMember(members ? members->getModel() : nullptr, _currentMemberId);
 }
 
 void ScheduleController::updateViewHeight() {
@@ -91,11 +103,12 @@ void ScheduleController::updateViewHeight() {
 }
 
 void ScheduleController::editTimeSlot(int index, const int hour1, const int minute1, const int hour2, const int minute2) {
-    if (!_model || index < 0 || index >= _model->rowCount()) return;
+    if (!_model || !_mController || _currentMemberId.isNull() || index < 0 || index >= _model->rowCount()) return;
 
     QString newTime = QString::asprintf("%02d:%02d-%02d:%02d", hour1, minute1, hour2, minute2);
 
-    if (hour1 > hour2 || (hour1 == hour2 && minute1 > minute2)) {
+    if (!QTime(hour1, minute1).isValid() || !QTime(hour2, minute2).isValid()
+        || QTime(hour1, minute1) >= QTime(hour2, minute2)) {
         Q_EMIT addNewTimeRowFail(RTypies::Message::TimeIsNotValid);
         return;
     }
@@ -124,19 +137,20 @@ void ScheduleController::handleEditRowRequest(int logicalIndex) {
     }
 }
 
-void ScheduleController::handleImportedSchedule(const QJsonObject& importedData,
-    QWidget* parentWidget) {
-    if (!_model) return;
-    bool overwrite = false;
-    if (_model->checkConflict(importedData)) {
+bool ScheduleController::handleImportedSchedule(const QJsonObject& importedData,
+    QWidget* parentWidget, int overwritePolicy) {
+    if (!_model || importedData.isEmpty()) return false;
+    bool overwrite = overwritePolicy == 1;
+    if (overwritePolicy < 0 && _model->checkConflict(importedData)) {
         int ret = QMessageBox::question(parentWidget, "检测到冲突",
             "导入的课表与当前时间表存在冲突。\n选择“Yes”将覆盖冲突的时间段为忙碌，选择“No”将跳过冲突部分。", 
             QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
-        if (ret == QMessageBox::Cancel) return;
+        if (ret == QMessageBox::Cancel) return false;
         overwrite = (ret == QMessageBox::Yes);
     }
     _model->mergeSchedule(importedData, overwrite);
     updateViewHeight();
+    return true;
 }
 
 void ScheduleController::handleClearCellsRequest(const QModelIndexList& indices) {
@@ -178,6 +192,12 @@ void ScheduleController::editTimeSlotDirectly(int row, const QString& time) {
     _model->updateTimeSlot(row, time);
 }
 
+void ScheduleController::editTimeSlotByStringDirectly(const QString& oldTime, const QString& newTime) {
+    if (!_model || !_model->getTimesRow()) return;
+    const int row = _model->getTimesRow()->indexOf(oldTime);
+    if (row >= 0) _model->updateTimeSlot(row, newTime);
+}
+
 void ScheduleController::addDateSlotDirectly(const QString& date) {
     int col = _model->columnCount();
     _model->addDateSlot(date, QModelIndex(), col, col);
@@ -202,8 +222,16 @@ void ScheduleController::deleteDateColumn(int logicalIndex) {
 }
 
 void ScheduleController::updateColumnDate(int logicalIndex, const QDate& newDate) {
-    if (!_model || logicalIndex < 0 || logicalIndex >= _model->columnCount()) return;
+    if (!_model || !_mController || _currentMemberId.isNull() || !newDate.isValid()
+        || logicalIndex < 0 || logicalIndex >= _model->columnCount()) return;
     QString oldDateStr = _model->getFullDateString(logicalIndex);
+    if (oldDateStr == newDate.toString("yyyy-MM-dd")) return;
+    for (int col = 0; col < _model->columnCount(); ++col) {
+        if (col != logicalIndex && _model->getFullDateString(col) == newDate.toString("yyyy-MM-dd")) {
+            Q_EMIT addNewTimeRowFail(RTypies::Message::DuplicateAdd);
+            return;
+        }
+    }
     _mController->getUndoStack()->push(new ScheduleEditDateCommand(_currentMemberId, oldDateStr, newDate.toString("yyyy-MM-dd"), _mController, this));
 }
 

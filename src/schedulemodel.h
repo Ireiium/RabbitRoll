@@ -3,6 +3,10 @@
 #include <QAbstractTableModel>
 #include "ModelInterface.h"
 #include <QJsonObject>
+#include <QPointer>
+#include <QUuid>
+
+class MemberInfoModel;
 
 class ScheduleModel  : public QAbstractTableModel
 {
@@ -25,6 +29,7 @@ public:
 	~ScheduleModel();
 
 	void setScheduleData(QStringList* times, QStringList* dates, QMap<QString, QMap<QString, bool>>* data);
+    void bindMember(MemberInfoModel* model, const QUuid& id);
 	//void toggleState(const QModelIndex& index);
 
 	int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -61,9 +66,13 @@ public:
 	void setCellStateByString(const QString& dateKey, const QString& timeKey, bool state);
 
 private:
-	QStringList* _timesPtr{ nullptr };
-	QStringList* _datesPtr{ nullptr };
-	QMap<QString, QMap<QString, bool>>* _mapPtr{ nullptr };
+	mutable QStringList* _timesPtr{ nullptr };
+	mutable QStringList* _datesPtr{ nullptr };
+	mutable QMap<QString, QMap<QString, bool>>* _mapPtr{ nullptr };
+    QPointer<MemberInfoModel> _memberModel;
+    QUuid _boundMemberId;
+    bool _usesMemberBinding{ false };
+    void resolveScheduleData() const;
 	QString getLastDate() const;
 	/*void clearCells(const QModelIndexList& indices);*/
 };

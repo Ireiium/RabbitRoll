@@ -16,6 +16,7 @@ MemberInfoComponent::MemberInfoComponent(QObject *parent)
 	connect(_model, &MemberInfoModel::dataChanged, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
 	connect(_model, &MemberInfoModel::rowsInserted, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
 	connect(_model, &MemberInfoModel::rowsRemoved, IdleMatchService::instance(), &IdleMatchService::onDataChanged);;
+    connect(_model, &MemberInfoModel::modelReset, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
 }
 
 MemberInfoComponent::~MemberInfoComponent()

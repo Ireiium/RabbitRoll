@@ -107,6 +107,7 @@ private:
     mutable QDate _earliestDateCache;
     mutable bool _isDateCacheDirty{ true };
     QUndoStack* _undoStack{ nullptr };
+    bool _searchUpdatePending{ false };
 
 
 };

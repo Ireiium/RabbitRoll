@@ -28,7 +28,12 @@ void ProjectWorker::doSave(const QString& filePath, const QJsonObject& root) {
     }
 
     QJsonDocument doc(root);
-    file.write(doc.toJson());
+    const QByteArray data = doc.toJson();
+    if (file.write(data) != data.size()) {
+        file.cancelWriting();
+        Q_EMIT error("写入失败，文件未完整保存。");
+        return;
+    }
 
     if (file.commit()) {
         Q_EMIT saveDone();

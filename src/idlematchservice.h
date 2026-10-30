@@ -11,6 +11,8 @@
 #include <QUuid>
 #include <QReadWriteLock>
 #include <QTimer>
+#include <atomic>
+#include <array>
 
 const int MINS_PER_DAY = 1440;//一天1440分钟
 using TimeMask = std::bitset<MINS_PER_DAY>;
@@ -89,6 +91,8 @@ private:
 
     std::atomic<bool> _isCalculating{ false };
     QAtomicInt _abortPending;
+    bool _futureActive{ false };
+    bool _restartPending{ false };
 
 
 };

@@ -169,6 +169,10 @@ bool MemberInfoModel::updateMemberProperty(int row, const QString& attrName, con
         QModelIndex vIndex = this->index(row, visibleCol);
         Q_EMIT dataChanged(vIndex, vIndex, { Qt::DisplayRole });
     }
+    else {
+        // A hidden property still changes persisted member data and the detail pane.
+        Q_EMIT dataChanged(index(row, 0), index(row, columnCount() - 1));
+    }
     return true;
 }
 
@@ -276,12 +280,15 @@ void MemberInfoModel::removeProperty(const QString& name)
 }
 
 QString MemberInfoModel::getNote(int row)const{
+    if (row < 0 || row >= _members.count()) return QString();
     return _members[row].note;
 }
 
 bool MemberInfoModel::updateMemberNote(int row, QString note) {
-    if (row >= 0) {
+    if (row >= 0 && row < _members.count()) {
+        if (_members[row].note == note) return true;
         _members[row].note = note;
+        Q_EMIT dataChanged(index(row, 0), index(row, columnCount() - 1));
         return true;
     }
     return false;

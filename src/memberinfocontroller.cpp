@@ -8,6 +8,7 @@
 #include "componentmanager.h"
 #include "scriptapi.h"
 #include "undocommands.h"
+#include <QTimer>
 
 //开发过程中更换过一次架构，导致存在一些数据访问仍然是直接访问Model的情况。
 //怕改了有BUG，暂时没动。
@@ -36,8 +37,6 @@ MemberInfoController::MemberInfoController(MemberInfoModel* model, MemberInfoVie
     connect(BackendWorker::instance(), &BackendWorker::batchMembersWithFormatFinished, this, &MemberInfoController::onBatchMembersWithFormatProcessed);
 
 	connect(_view, &MemberInfoView::deleteSelectedRows, this, &MemberInfoController::removeSelectedMembers);
-
-    connect(BackendWorker::instance(), &BackendWorker::searchMemberFinished, this, &MemberInfoController::searchDataReady);
 
     connect(_model, &QAbstractTableModel::rowsInserted, this, &MemberInfoController::requestSearchSuggestionsUpdate);
     connect(_model, &QAbstractTableModel::rowsRemoved, this, &MemberInfoController::requestSearchSuggestionsUpdate);
@@ -270,12 +269,8 @@ QString MemberInfoController::getNameById(const QUuid& id) const {
 }
 
 QDate MemberInfoController::calculateEarliestMonday() const {
-    if (!_isDateCacheDirty && _earliestDateCache.isValid()) {
-        return _earliestDateCache;
-    }
-
     QDate minDate;
-    for (const auto& member : _model->_members) {
+    for (const auto& member : std::as_const(_model->_members)) {
         for (auto it = member.scheduleMap.constBegin(); it != member.scheduleMap.constEnd(); ++it) {
             QDate d = QDate::fromString(it.key(), "yyyy-MM-dd");
             if (!d.isValid()) continue;
@@ -337,26 +332,37 @@ void MemberInfoController::scrollToRow(int row) {
 }
 
 void MemberInfoController::getSearchData(QStringList& names, QList<QVariantMap>& data) {
+    names.clear();
+    data.clear();
     if (!_model) return;
     int count = _model->rowCount();
     names.reserve(count);
     data.reserve(count);
 
     for (int i = 0; i < count; ++i) {
-        QString name = _model->_members[i].properties.value("姓名").toString();
+        QString name = _model->_members.at(i).properties.value("姓名").toString();
+        if (name.isEmpty()) continue;
         names << name;
 
         QVariantMap itemData;
         itemData.insert("row", i);
         itemData.insert("name", name);
+        itemData.insert("id", _model->_members.at(i).id);
         data << itemData;
     }
 }
 
 void MemberInfoController::requestSearchSuggestionsUpdate() {
-    QMetaObject::invokeMethod(BackendWorker::instance(), [=]() {
-        BackendWorker::instance()->searchMember(_model->_members);
-    }, Qt::QueuedConnection);
+    if (_searchUpdatePending) return;
+    _searchUpdatePending = true;
+    // Read the model on its owning thread, and combine batch edits into one refresh.
+    QTimer::singleShot(0, this, [this]() {
+        _searchUpdatePending = false;
+        QStringList names;
+        QList<QVariantMap> data;
+        getSearchData(names, data);
+        Q_EMIT searchDataReady(names, data);
+    });
 }
 
 void MemberInfoController::updateMemberPropertyDirectly(int row, const QString& attrName, const QVariant& value) { 

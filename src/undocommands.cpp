@@ -163,10 +163,10 @@ ScheduleEditTimeCommand::ScheduleEditTimeCommand(QUuid memberId, int row, const 
     setText(QString("编辑排班时间: %1 -> %2").arg(oldTime).arg(newTime));
 }
 void ScheduleEditTimeCommand::undo() { 
-    _mController->selectAndShowMember(_memberId); _sController->editTimeSlotDirectly(_row, _oldTime);
+    _mController->selectAndShowMember(_memberId); _sController->editTimeSlotByStringDirectly(_newTime, _oldTime);
 }
 void ScheduleEditTimeCommand::redo() { 
-    _mController->selectAndShowMember(_memberId); _sController->editTimeSlotDirectly(_row, _newTime); 
+    _mController->selectAndShowMember(_memberId); _sController->editTimeSlotByStringDirectly(_oldTime, _newTime);
 }
 
 ScheduleAddDateCommand::ScheduleAddDateCommand(QUuid memberId, const QString& date, MemberInfoController* mController, ScheduleController* sController, QUndoCommand* parent)

@@ -83,7 +83,6 @@ bool ProjectActionController::handleSaveProject() {
     disconnect(con1);
     disconnect(con2);
 
-    ProjectManager::instance()->setDirty(!isOk);
     if (isOk) {
         Q_EMIT projectSavedSuccessfully(ProjectManager::instance()->currentFilePath());
     }
@@ -95,9 +94,6 @@ bool ProjectActionController::handleSaveAsProject() {
     if (defaultName.isEmpty()) defaultName = "未命名项目";
     QString filePath = QFileDialog::getSaveFileName(_parentUI, "另存为", defaultName, "RabbitRoll (*.rroll)");
     if (filePath.isEmpty()) return false;
-
-    QFileInfo fileInfo(filePath);
-    ProjectSetting::instance()->_projectName = fileInfo.completeBaseName();
 
     QProgressDialog progress("正在努力另存为...", QString(), 0, 0, _parentUI);
     progress.setWindowModality(Qt::WindowModal);

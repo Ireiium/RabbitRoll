@@ -11,7 +11,14 @@ AImodels/
 
 # 其他分支
 feature-ai-version/
-# 本机配置和凭据
+
+# Public sync: local settings, credentials and generated artifacts
+build*/
+cmake-build-*/
+.idea/
+*.user
+.gitconfig
+.git-credentials
 CMakeUserPresets.json
 .env
 .env.*
@@ -22,8 +29,6 @@ CMakeUserPresets.json
 *.key
 *.p12
 *.pfx
-
-# 可再生缓存及日志
 **/CMakeFiles/
 CMakeCache.txt
 compile_commands.json
@@ -34,5 +39,4 @@ compile_commands.json
 __pycache__/
 *.py[cod]
 *.log
-
-# 排班项目、导出和用户数据请保存在仓库之外
+*.dmp

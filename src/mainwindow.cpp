@@ -52,11 +52,11 @@ MainWindow::MainWindow(bool hasAI, QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
-    delete ComponentManager::instance();
     if (_workerThread && _workerThread->isRunning()) {
         _workerThread->quit();
         _workerThread->wait();
     }
+    delete ComponentManager::instance();
 }
 
 void MainWindow::initInterface() {
@@ -215,8 +215,11 @@ void MainWindow::initialWindow()
     //新建与打开
     connect(_homePage, &HomePage::createNew, this, triggerNewMemberAction);
     connect(createNewBtn, &QAction::triggered, this, triggerNewMemberAction);
-    connect(_homePage, &HomePage::openFile, _actionController, &ProjectActionController::handleOpenProject);
-    connect(openBtn, &QAction::triggered, _actionController, &ProjectActionController::handleOpenProject);
+    auto openProject = [this]() {
+        if (maybeSave()) _actionController->handleOpenProject();
+    };
+    connect(_homePage, &HomePage::openFile, this, openProject);
+    connect(openBtn, &QAction::triggered, this, openProject);
 
     //最近文件
     connect(_homePage, &HomePage::openRecentFile, this, [=](const QString& filePath) {
@@ -328,7 +331,7 @@ bool MainWindow::maybeSave() {
         QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
 
     if (resBtn == QMessageBox::Yes) {
-        return _actionController->handleSaveProject();
+        return _actionController->handleSaveProject() && !ProjectManager::instance()->isDirty();
     }
     else if (resBtn == QMessageBox::Cancel) {
         return false;

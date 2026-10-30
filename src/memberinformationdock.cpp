@@ -48,15 +48,29 @@ MemberInformationDock::MemberInformationDock(QWidget* parent)
         }
         });
 
-    connect(mComp->getModel(), &QAbstractItemModel::rowsRemoved, this, [=](const QModelIndex& parent, int first, int last) {
-        if (this->isVisible() && _currentRow >= first && _currentRow <= last) {
-            this->hide();
-            _currentRow = -1;
+    // QList insert/remove can relocate every MemberData, including the one displayed here.
+    auto detachSchedule = [this]() { Q_EMIT _controller->requestUpdateSchedule(nullptr); };
+    connect(mComp->getModel(), &QAbstractItemModel::rowsAboutToBeInserted, this, detachSchedule);
+    connect(mComp->getModel(), &QAbstractItemModel::rowsAboutToBeRemoved, this, detachSchedule);
+    connect(mComp->getModel(), &QAbstractItemModel::modelAboutToBeReset, this, [this, detachSchedule]() {
+        if (_currentRow >= 0 && _noteEdit) _controller->updateMemberNote(_currentRow, _noteEdit->toPlainText());
+        detachSchedule();
+        _currentRow = -1;
+        _currentMemberId = {};
+        hide();
+    });
+    auto rebindSchedule = [this, mComp]() {
+        if (_currentMemberId.isNull()) return;
+        _currentRow = mComp->getModel()->getRowById(_currentMemberId);
+        if (_currentRow < 0) {
+            _currentMemberId = {};
+            hide();
+            return;
         }
-        else if (this->isVisible() && _currentRow > last) {
-            _currentRow -= (last - first + 1);
-        }
-        });
+        Q_EMIT _controller->requestUpdateSchedule(_controller->getMemberDataPtr(_currentRow));
+    };
+    connect(mComp->getModel(), &QAbstractItemModel::rowsInserted, this, rebindSchedule);
+    connect(mComp->getModel(), &QAbstractItemModel::rowsRemoved, this, rebindSchedule);
 
     connect(mComp->getModel(), &QAbstractItemModel::dataChanged, this, [=](const QModelIndex& topLeft, const QModelIndex& bottomRight, const QList<int>& roles) {
         if (this->isVisible() && _currentRow >= topLeft.row() && _currentRow <= bottomRight.row()) {
@@ -174,12 +188,20 @@ void MemberInformationDock::initUi()
                 Q_EMIT finishExportSchedule(ok);
             }
         }
-        }, Qt::SingleShotConnection);
+        });
 }
 
 void MemberInformationDock::setMemberDetails(const QVariantMap& details, const int row)
 {
+    auto* model = ComponentManager::instance()->getComponent<MemberInfoComponent>()->getModel();
+    auto* member = model->getMemberDataPtr(row);
+    if (!member) return;
+    const QUuid editingMemberId = member->id;
+    if (_currentRow >= 0 && _noteEdit && _currentMemberId != editingMemberId) {
+        _controller->updateMemberNote(_currentRow, _noteEdit->toPlainText());
+    }
     _currentRow = row;
+    _currentMemberId = editingMemberId;
 
     //只清理 FormLayout 里的动态属性框
     clearLayout();
@@ -190,10 +212,10 @@ void MemberInformationDock::setMemberDetails(const QVariantMap& details, const i
         ElaLineEdit* editLine = new ElaLineEdit(this);
         editLine->setText(details.value(key).toString());
         editLine->setObjectName(key);
-        connect(editLine, &ElaLineEdit::editingFinished, [=]() {
+        connect(editLine, &ElaLineEdit::editingFinished, this, [this, editLine, editingMemberId]() {
             QString attrName = editLine->objectName();
             QString newValue = editLine->text();
-            Q_EMIT propertyChanged(attrName, newValue);
+            _controller->updateMemberProperty(editingMemberId, attrName, newValue);
             });
         _formLayout->addRow(new ElaText(key + ":", 14), editLine);
     }
@@ -212,8 +234,8 @@ void MemberInformationDock::setMemberDetails(const QVariantMap& details, const i
 
     ElaCheckBox* enableCheckBox = new ElaCheckBox("是否参与", this);
     enableCheckBox->setChecked(details.value("_enableScheduling", true).toBool());
-    connect(enableCheckBox, &ElaCheckBox::toggled, this, [=](bool checked) {
-        _controller->setEnableScheduling(_currentRow, checked);
+    connect(enableCheckBox, &ElaCheckBox::toggled, this, [this, editingMemberId, model](bool checked) {
+        _controller->setEnableScheduling(model->getRowById(editingMemberId), checked);
         });
 
     countHLayout->addWidget(countEdit);
@@ -246,17 +268,36 @@ void MemberInformationDock::setMemberDetails(const QVariantMap& details, const i
 }
 
 void MemberInformationDock::importSchedule() {
+    auto* memberComponent = ComponentManager::instance()->getComponent<MemberInfoComponent>();
+    if (!memberComponent || _currentRow < 0 || _currentRow >= memberComponent->getModel()->rowCount()) return;
+    const QPersistentModelIndex importTarget(memberComponent->getModel()->index(_currentRow, 0));
+    const QUuid importMemberId = memberComponent->getModel()->getMemberDataPtr(_currentRow)->id;
     QString filePath = QFileDialog::getOpenFileName(this, "导入课表", "", "RabbitRoll Schedule (*.rsch);");
     if (filePath.isEmpty()) return;
 
     QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) return;
-    QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "导入失败", "无法读取课表文件。");
+        return;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    QJsonObject root = document.object();
     file.close();
 
     QString dataType = root["dataType"].toString();
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()
+        || root["app"].toString() != "rabbitroll"
+        || (dataType != "course_schedule" && dataType != "schedule")) {
+        QMessageBox::warning(this, "导入失败", "该文件不是有效的 RabbitRoll 时间表。");
+        return;
+    }
+    if (dataType == "course_schedule" && root["school"].toString() != "jwxt.wit.edu.cn") {
+        QMessageBox::warning(this, "导入失败", "当前仅支持导入 jwxt.wit.edu.cn 的课程表。");
+        return;
+    }
     QDate startDate = QDate::currentDate();
-    bool shouldOverwrite = true;
+    int overwritePolicy = -1;
     if (dataType == "course_schedule") {
         DialogAction dateDialog(this);
         dateDialog.setWindowTitle("选择学期起点");
@@ -283,6 +324,10 @@ void MemberInformationDock::importSchedule() {
 
         if (dateDialog.exec() != QDialog::Accepted) return;
         startDate = calPicker->getSelectedDate();
+        if (!startDate.isValid() || startDate.dayOfWeek() != 1) {
+            QMessageBox::warning(this, "导入失败", "学期起点必须选择第一周的周一。");
+            return;
+        }
         _lastChosenStartDate = startDate;
     }
     else if (dataType == "schedule") {
@@ -291,7 +336,7 @@ void MemberInformationDock::importSchedule() {
             QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
 
         if (res == QMessageBox::Cancel) return;
-        shouldOverwrite = (res == QMessageBox::Yes);
+        overwritePolicy = (res == QMessageBox::Yes) ? 1 : 0;
     }
 
     QProgressDialog* progress = new QProgressDialog("正在处理数据，请稍候...", QString(), 0, 0, this);
@@ -300,7 +345,7 @@ void MemberInformationDock::importSchedule() {
     progress->setRange(0, 0);
     progress->show();
     QProgressBar* bar = progress->findChild<QProgressBar*>();
-    bar->setAlignment(Qt::AlignCenter);
+    if (bar) bar->setAlignment(Qt::AlignCenter);
 
     _importBtn->setEnabled(false);
 
@@ -312,10 +357,17 @@ void MemberInformationDock::importSchedule() {
         _importBtn->setEnabled(true);
 
         QWidget* parent = this->window() ? this->window() : this;
-        if (ok) {
-            _sController->handleImportedSchedule(res, this);
+        const auto* targetData = importTarget.isValid()
+            ? memberComponent->getModel()->getMemberDataPtr(importTarget.row()) : nullptr;
+        const bool targetExists = targetData && targetData->id == importMemberId;
+        bool imported = false;
+        if (ok && targetExists && !res.isEmpty()) {
+            _controller->selectAndShowMember(importMemberId);
+            imported = _sController->handleImportedSchedule(res, this, overwritePolicy);
+        }
+        if (imported) {
             QFileInfo fileInfo(filePath);
-            _controller->setScheduleFileSource(_currentRow, fileInfo.fileName());
+            _controller->setScheduleFileSource(importTarget.row(), fileInfo.fileName());
             Q_EMIT propertyChanged("schedule", "imported");
             if (this->isFloating()) {
                 ElaMessageBar::success(ElaMessageBarType::BottomLeft, "成功", "数据导入成功", 2000, parent);
@@ -325,11 +377,13 @@ void MemberInformationDock::importSchedule() {
             }
         }
         else {
+            // A cancelled merge is deliberately left untouched.
+            if (ok && targetExists && !res.isEmpty()) return;
             if (this->isFloating()) {
-                ElaMessageBar::error(ElaMessageBarType::BottomLeft, "失败", "数据导入失败", 2000, parent);
+                ElaMessageBar::error(ElaMessageBarType::BottomLeft, "失败", targetExists ? "课表未包含可导入的数据" : "原成员已被删除或项目已切换，请重新导入", 2000, parent);
             }
             else {
-                Q_EMIT finishImportSchedule(ok);
+                Q_EMIT finishImportSchedule(false);
             }
         }
         }, Qt::SingleShotConnection);
@@ -368,6 +422,10 @@ void MemberInformationDock::showEvent(QShowEvent* event)
 
 void MemberInformationDock::hideEvent(QHideEvent* event)
 {
+    if (_currentRow >= 0 && _noteEdit) _controller->updateMemberNote(_currentRow, _noteEdit->toPlainText());
+    _currentRow = -1;
+    _currentMemberId = {};
+    Q_EMIT _controller->requestUpdateSchedule(nullptr);
     _controller->changeViewClickMode(RTypies::View::DoubleClick);
     ElaDockWidget::hideEvent(event);
 }

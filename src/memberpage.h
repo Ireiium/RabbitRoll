@@ -9,7 +9,9 @@ class ElaMultiSelectComboBox;
 class MemberInfoController;
 class ScheduleController;
 class ElaPushButton;
-class ElaSuggestBox;
+class ElaLineEdit;
+class QStandardItemModel;
+class QCompleter;
 
 class MemberPage  : public ElaScrollPage
 {
@@ -52,8 +54,9 @@ private:
 
 	bool _isScriptChangedData = false;
 	ElaPushButton* _recoverBtn{ nullptr };
-	ElaSuggestBox* _searchBox{ nullptr };
-	QStringList _currentSuggestKeys;
+	ElaLineEdit* _searchBox{ nullptr };
+    QStandardItemModel* _searchModel{ nullptr };
+    QCompleter* _searchCompleter{ nullptr };
 
 };
 

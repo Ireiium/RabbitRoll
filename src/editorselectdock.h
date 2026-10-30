@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ElaDockWidget.h>
-#include <QModelIndex>
+#include <QPersistentModelIndex>
 #include <QUuid>
 
 class ElaProgressRing;
@@ -31,7 +31,7 @@ private:
     EditorDutyController* _eController = nullptr;
     MemberInfoController* _mController = nullptr;
 
-    QModelIndex _currentIndex;
+    QPersistentModelIndex _currentIndex;
     QStackedWidget* _stack = nullptr;
     ElaProgressRing* _busyRing = nullptr;
     QVBoxLayout* _listLayout = nullptr;

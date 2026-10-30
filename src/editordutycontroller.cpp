@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include "undocommands.h"
+#include "projectsetting.h"
 #include <QFile>
 #include <QFileInfo>
 #include <random>
@@ -50,7 +51,8 @@ void EditorDutyController::setupView(QLayout* layout) {
 
 void EditorDutyController::addTimeRow(const int hour1, const int minute1, const int hour2, const int minute2) {
     QString time = QString::asprintf("%02d:%02d-%02d:%02d", hour1, minute1, hour2, minute2);
-    if (hour1 > hour2 || (hour1 == hour2 && minute1 > minute2)) {
+    if (!QTime(hour1, minute1).isValid() || !QTime(hour2, minute2).isValid() ||
+        QTime(hour1, minute1) >= QTime(hour2, minute2)) {
         qDebug() << "时间不合法";
         Q_EMIT addTimeError(RTypies::Message::TimeIsNotValid);
     }
@@ -162,13 +164,38 @@ void EditorDutyController::applyCalculationResults(const QHash<QString, QStringL
     QStringList rows = *(_model->getTimesRow());
     QStringList cols = (mode == 0) ? _model->getWeekColumns() : _model->getDateColumns();
 
-    _model->blockSignals(true);
+    const bool signalsWereBlocked = _model->blockSignals(true);
+    bool assignmentsChanged = false;
 
     QList<QUuid> allValidIds = mController->getAllValidIds();
+    QSet<QUuid> enabledIds;
+    auto* memberModel = mComp->getModel();
+    for (int row = 0; row < memberModel->rowCount(); ++row) {
+        const auto* member = memberModel->getMemberDataPtr(row);
+        if (member && member->enableScheduling) enabledIds.insert(member->id);
+    }
+    const auto* settings = ProjectSetting::instance();
 
     for (int r = 0; r < rows.count(); ++r) {
         for (int c = 0; c < cols.count(); ++c) {
             QString key = QString("%1_%2_%3").arg(mode).arg(cols[c]).arg(rows[r]);
+            bool excludedByDateFilter = false;
+            if (settings->_enableSerchDateRange) {
+                if (mode == EditorDutyModel::DateMode) {
+                    const auto date = QDate::fromString(cols[c], "yyyy-MM-dd");
+                    excludedByDateFilter = date.isValid()
+                        && (date < settings->_searchStartDate || date > settings->_searchEndDate);
+                }
+                else {
+                    const QStringList weekDays = { "周一", "周二", "周三", "周四", "周五", "周六", "周日" };
+                    const int dayOfWeek = weekDays.indexOf(cols[c]) + 1;
+                    if (dayOfWeek > 0) {
+                        const auto firstOccurrence = settings->_searchStartDate.addDays(
+                            (dayOfWeek - settings->_searchStartDate.dayOfWeek() + 7) % 7);
+                        excludedByDateFilter = firstOccurrence > settings->_searchEndDate;
+                    }
+                }
+            }
 
             QStringList availableIdsStr = schedule.value(key, QStringList());
             _model->setCellMembers(r, c, availableIdsStr);
@@ -182,7 +209,8 @@ void EditorDutyController::applyCalculationResults(const QHash<QString, QStringL
             for (int i = currentSelectedIds.size() - 1; i >= 0; --i) {
                 QUuid selectedId = currentSelectedIds[i];
 
-                if (!allValidIds.contains(selectedId) || !availableIdSet.contains(selectedId)) {
+                if (!allValidIds.contains(selectedId) || !enabledIds.contains(selectedId)
+                    || (!excludedByDateFilter && !availableIdSet.contains(selectedId))) {
                     currentSelectedIds.removeAt(i);
                     changed = true;
                 }
@@ -190,12 +218,14 @@ void EditorDutyController::applyCalculationResults(const QHash<QString, QStringL
 
             if (changed) {
                 _model->setSelectedIds(r, c, currentSelectedIds);
+                assignmentsChanged = true;
             }
         }
     }
 
-    _model->blockSignals(false);
+    _model->blockSignals(signalsWereBlocked);
     _model->refreshView();
+    if (assignmentsChanged) Q_EMIT _model->assignmentsChanged();
 }
 
 QList<QUuid> EditorDutyController::getSelectedIds(const QModelIndex& index) const {
@@ -213,7 +243,8 @@ void EditorDutyController::setSelectedIds(const QModelIndex& index, const QList<
 void EditorDutyController::editTimeRow(int index, const int hour1, const int minute1, const int hour2, const int minute2) {
     if (index < 0 || index >= _model->rowCount()) return;
     QString newTime = QString::asprintf("%02d:%02d-%02d:%02d", hour1, minute1, hour2, minute2);
-    if (hour1 > hour2 || (hour1 == hour2 && minute1 > minute2)) {
+    if (!QTime(hour1, minute1).isValid() || !QTime(hour2, minute2).isValid() ||
+        QTime(hour1, minute1) >= QTime(hour2, minute2)) {
         Q_EMIT addTimeError(RTypies::Message::TimeIsNotValid);
         return;
     }

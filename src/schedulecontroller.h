@@ -43,7 +43,7 @@ public:
     int columnCount() const;
     int rowCount() const;
 
-    void handleImportedSchedule(const QJsonObject& importedData, QWidget* parentWidget);
+    bool handleImportedSchedule(const QJsonObject& importedData, QWidget* parentWidget, int overwritePolicy = -1);
 
     void setMemberInfoController(MemberInfoController* mController);
     void requestToggleState(const QModelIndex& index);
@@ -53,6 +53,7 @@ public:
     void addTimeSlotDirectly(const QString& time);
     void removeTimeSlotDirectly(const QString& time);
     void editTimeSlotDirectly(int row, const QString& time);
+    void editTimeSlotByStringDirectly(const QString& oldTime, const QString& newTime);
     void addDateSlotDirectly(const QString& date);
     void removeDateSlotDirectly(const QString& date);
     void updateDateSlotByString(const QString& oldDateStr, const QDate& newDate);

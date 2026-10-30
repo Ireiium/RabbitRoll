@@ -172,8 +172,10 @@ QList<QUuid> EditorDutyModel::getSelectedIds(int row, int col) const {
 
 void EditorDutyModel::setSelectedIds(int row, int col, const QList<QUuid>& ids) {
 	if (row < 0 || col < 0) return;
+	if (getSelectedIds(row, col) == ids) return;
 	_selectedIdsMap[getCellKey(row, col)] = ids;
 	Q_EMIT dataChanged(index(row, col), index(row, col), { Qt::DisplayRole });
+	Q_EMIT assignmentsChanged();
 }
 
 const QHash<QString, QList<QUuid>>& EditorDutyModel::getSelectedIdsMap() const { 

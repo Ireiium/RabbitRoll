@@ -13,7 +13,10 @@
 #include "projectmanager.h"
 #include <QFileDialog>
 #include "scriptengine.h"
-#include "ElaSuggestBox.h"
+#include "ElaLineEdit.h"
+#include <QCompleter>
+#include <QStandardItemModel>
+#include <QAbstractItemView>
 
 MemberPage::MemberPage(QWidget* parent)
 	: ElaScrollPage(parent)
@@ -68,14 +71,22 @@ MemberPage::MemberPage(QWidget* parent)
 	setRecoveryBtn(false);
     buttonLayout->addWidget(_recoverBtn);
     buttonLayout->addStretch();
-    _searchBox = new ElaSuggestBox(this);
+    _searchBox = new ElaLineEdit(this);
+    _searchBox->setObjectName("memberSearchEdit");
     _searchBox->setFixedWidth(180);
     _searchBox->setPlaceholderText("搜索成员姓名...");
+	_searchBox->setClearButtonEnabled(true);
+	_searchModel = new QStandardItemModel(this);
+	_searchCompleter = new QCompleter(_searchModel, this);
+	_searchCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+	_searchCompleter->setFilterMode(Qt::MatchContains);
+	_searchCompleter->setCompletionRole(Qt::DisplayRole);
+	_searchCompleter->setCompletionMode(QCompleter::PopupCompletion);
+	_searchBox->setCompleter(_searchCompleter);
 	buttonLayout->addWidget(_searchBox);
 
-    connect(_searchBox, &ElaSuggestBox::suggestionClicked, this, [=](QString suggestText, QVariantMap suggestData) {
-        int row = suggestData.value("row").toInt();
-        _controller->scrollToRow(row);
+    connect(_searchCompleter, qOverload<const QModelIndex&>(&QCompleter::activated), this, [this](const QModelIndex& index) {
+        _controller->selectAndShowMember(index.data(Qt::UserRole).toUuid());
         });
     connect(_controller, &MemberInfoController::searchDataReady, this, &MemberPage::onSearchDataReady);
     _controller->requestSearchSuggestionsUpdate();
@@ -139,7 +150,7 @@ MemberPage::MemberPage(QWidget* parent)
 
     //收到dock传来的属性更新指令并处理
     connect(_infoDock, &MemberInformationDock::propertyChanged, this, [=](QString attrName, QString newValue) {
-        int row = _controller->getCurrentRow();
+        int row = _infoDock->currentMemberRow();
         if (row >= 0) {
             _controller->updateMemberProperty(row, attrName, newValue);
         }
@@ -174,9 +185,11 @@ MemberPage::MemberPage(QWidget* parent)
     
     //打开dock
     connect(_controller, &MemberInfoController::memberSelected, this, [=](const QVariantMap details,int row) {
-        _infoDock->setMemberDetails(details,row);
         _curSeeRow = row;
+        // Docking can reparent/hide the widget, which clears its previous binding.
+        // Finish that transition before binding the newly selected member.
         showInfoDock();
+        _infoDock->setMemberDetails(details,row);
         });
 
     connect(ProjectManager::instance(), &ProjectManager::projectLoaded, this, [=]() {
@@ -310,15 +323,16 @@ void MemberPage::updateRecoverButtonState() {
 }
 
 void MemberPage::onSearchDataReady(const QStringList& names, const QList<QVariantMap>& dataList) {
-    if (!_searchBox) return;
-
-    for (const QString& key : _currentSuggestKeys) {
-        _searchBox->removeSuggestion(key);
+    if (!_searchModel) return;
+    _searchModel->clear();
+    for (int i = 0; i < qMin(names.size(), dataList.size()); ++i) {
+        auto* item = new QStandardItem(names[i]);
+        item->setData(dataList[i].value("id"), Qt::UserRole);
+        _searchModel->appendRow(item);
     }
-    _currentSuggestKeys.clear();
-    for (int i = 0; i < names.size(); ++i) {
-        QString key = _searchBox->addSuggestion(names[i], dataList[i]);
-        _currentSuggestKeys.append(key);
+    if (_searchBox->hasFocus() && !_searchBox->text().isEmpty()) {
+        _searchCompleter->setCompletionPrefix(_searchBox->text());
+        _searchCompleter->complete();
     }
 }
 

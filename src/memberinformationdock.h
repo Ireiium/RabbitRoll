@@ -4,6 +4,7 @@
 #include "RTypies.h"
 #include <QResizeEvent>
 #include <QDate> 
+#include <QUuid>
 
 class QVBoxLayout;
 class QFormLayout;
@@ -33,6 +34,7 @@ private Q_SLOTS:
 	void importSchedule();
 
 public:
+    int currentMemberRow() const { return _currentRow; }
 	MemberInformationDock(QWidget* parent);
 	~MemberInformationDock();
 	void setMemberDetails(const QVariantMap& details, const int row);
@@ -60,6 +62,7 @@ private:
 	QDate _lastChosenStartDate;
 
 	int _currentRow = -1;
+    QUuid _currentMemberId;
 
 	void initUi();
 	void clearLayout();

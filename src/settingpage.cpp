@@ -20,10 +20,6 @@
 #include "ElaPushButton.h"
 #include "scriptengine.h"
 #include "settings.h"
-#ifdef ENABLE_AI_SUPPORT
-#include "ElaLineEdit.h"
-#include "AIServiceInterface.h"
-#endif
 
 SettingPage::SettingPage(bool hasAI, QWidget* parent)
     : ElaScrollPage(parent)
@@ -157,31 +153,6 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
     aiContentLayout->addWidget(modelText);
     aiContentLayout->addStretch();
     aiDrawer->addDrawer(aiContent);
-
-    QWidget* apiKeyRow = new QWidget(this);
-    apiKeyRow->setFixedHeight(50);
-    QHBoxLayout* apiKeyLayout = new QHBoxLayout(apiKeyRow);
-    apiKeyLayout->setContentsMargins(40, 0, 15, 0);
-    apiKeyLayout->addWidget(new ElaText("API Key", 15));
-    ElaLineEdit* apiKeyEdit = new ElaLineEdit(this);
-    apiKeyEdit->setObjectName("aiApiKeyEdit");
-    apiKeyEdit->setEchoMode(QLineEdit::Password);
-    apiKeyEdit->setPlaceholderText("填写自己的 DeepSeek API Key");
-    apiKeyEdit->setText(Settings::instance()->getAPI());
-    apiKeyEdit->setMinimumWidth(250);
-    apiKeyLayout->addWidget(apiKeyEdit, 1);
-    ElaPushButton* saveApiKeyBtn = new ElaPushButton("保存", this);
-    saveApiKeyBtn->setObjectName("aiApiKeySaveButton");
-    saveApiKeyBtn->setFixedSize(80, 32);
-    apiKeyLayout->addWidget(saveApiKeyBtn);
-    aiDrawer->addDrawer(apiKeyRow);
-
-    connect(saveApiKeyBtn, &ElaPushButton::clicked, this, [=]() {
-        Settings::instance()->setAPI(apiKeyEdit->text());
-        Settings::instance()->sync();
-        AIServiceInterface::instance()->setApiKey(Settings::instance()->getAPI());
-        ElaMessageBar::success(ElaMessageBarType::BottomLeft, "成功", "API Key 设置已更新", 2000, this);
-        });
 
     bool aiEnabledSaved = Settings::instance()->getEnableAI();
 
@@ -487,8 +458,6 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
 #ifdef ENABLE_AI_SUPPORT
         if (_enableAISwitch)
             _enableAISwitch->setIsToggled(false);
-        apiKeyEdit->clear();
-        AIServiceInterface::instance()->setApiKey(Settings::instance()->getAPI());
 #endif
 
 

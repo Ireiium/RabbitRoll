@@ -27,7 +27,9 @@ ScheduleComponent::ScheduleComponent(QObject* parent)
     connect(_view, &ScheduleView::requestEditRow, _controller, &ScheduleController::handleEditRowRequest);
     connect(_model, &ScheduleModel::dataChanged, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
     connect(_model, &ScheduleModel::rowsInserted, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
+    connect(_model, &ScheduleModel::rowsRemoved, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
     connect(_model, &ScheduleModel::columnsInserted, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
+    connect(_model, &ScheduleModel::columnsRemoved, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
     connect(_model, &ScheduleModel::modelReset, IdleMatchService::instance(), &IdleMatchService::onDataChanged);
     connect(_view, &ScheduleView::requestUpdateColumnDate, _controller, &ScheduleController::updateColumnDate);
     connect(_view, &ScheduleView::getFullDateString, this, [this](int column) {

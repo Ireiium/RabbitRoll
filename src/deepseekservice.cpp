@@ -15,14 +15,13 @@ DeepSeekService::DeepSeekService(QObject* parent)
 QString DeepSeekService::ask(const QString& systemPrompt, const QString& userPrompt,
     const QString& apiKey, const QString& model)
 {
-    const QString trimmedApiKey = apiKey.trimmed();
-    if (trimmedApiKey.isEmpty()) {
-        return QStringLiteral("API Error: 未配置 DeepSeek API Key，请设置 RABBITROLL_DEEPSEEK_API_KEY 或 DEEPSEEK_API_KEY 环境变量。");
+    if (apiKey.trimmed().isEmpty()) {
+        return "API Error: API key is not configured.";
     }
-
     QNetworkRequest request(QUrl("https://api.deepseek.com/chat/completions"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    request.setRawHeader("Authorization", ("Bearer " + trimmedApiKey).toUtf8());
+    request.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+    request.setTransferTimeout(120000);
 
     QJsonObject systemMsg, userMsg;
     systemMsg["role"] = "system"; systemMsg["content"] = systemPrompt;
@@ -79,15 +78,13 @@ QString DeepSeekService::ask(const QString& systemPrompt, const QString& userPro
 QString DeepSeekService::askStreaming(const QString& systemPrompt, const QString& userPrompt,
     const QString& apiKey, const QString& model, bool enableThinking)
 {
-    const QString trimmedApiKey = apiKey.trimmed();
-    if (trimmedApiKey.isEmpty()) {
+    if (apiKey.trimmed().isEmpty()) {
         Q_EMIT responseFinished();
-        return QStringLiteral("API Error: 未配置 DeepSeek API Key，请设置 RABBITROLL_DEEPSEEK_API_KEY 或 DEEPSEEK_API_KEY 环境变量。");
+        return "API Error: API key is not configured.";
     }
-
     QNetworkRequest request(QUrl("https://api.deepseek.com/chat/completions"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    request.setRawHeader("Authorization", ("Bearer " + trimmedApiKey).toUtf8());
+    request.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
     request.setTransferTimeout(120000);
 
     QJsonObject systemMsg, userMsg;
@@ -124,16 +121,16 @@ QString DeepSeekService::askStreaming(const QString& systemPrompt, const QString
     QString fullContent;
     QByteArray buffer;
 
-    connect(reply, &QNetworkReply::readyRead, this, [&]() {
-        buffer.append(reply->readAll());
+    const auto consumeLines = [&]() {
         while (true) {
-            int idxEnd = buffer.indexOf("\n\n");
+            int idxEnd = buffer.indexOf('\n');
             if (idxEnd == -1) break;
             QByteArray line = buffer.left(idxEnd);
-            buffer = buffer.mid(idxEnd + 2);
+            buffer.remove(0, idxEnd + 1);
+            if (line.endsWith('\r')) line.chop(1);
 
-            if (line.startsWith("data: ")) {
-                line = line.mid(6);
+            if (line.startsWith("data:")) {
+                line = line.mid(5).trimmed();
                 if (line == "[DONE]") continue;
 
                 QJsonDocument doc = QJsonDocument::fromJson(line);
@@ -146,14 +143,22 @@ QString DeepSeekService::askStreaming(const QString& systemPrompt, const QString
                 QString content = delta["content"].toString();
                 QString text = reasoning + content;
                 if (!text.isEmpty()) {
-                    fullContent += text;
+                    // Reasoning is progress text, never part of the returned JSON answer.
+                    fullContent += content;
                     Q_EMIT responseChunkReady(text);
                 }
             }
         }
-        });
+    };
+    connect(reply, &QNetworkReply::readyRead, this, [&]() {
+        buffer.append(reply->readAll());
+        consumeLines();
+    });
 
     loop.exec();
+    buffer.append(reply->readAll());
+    buffer.append('\n');
+    consumeLines();
 
     if (reply->error() != QNetworkReply::NoError) {
         QString err = reply->errorString();

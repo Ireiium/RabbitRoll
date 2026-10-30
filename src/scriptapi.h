@@ -43,7 +43,8 @@ public:
 
 
     bool hasModified() const { return _isModified; }
-    void resetModified() { _isModified = false; }
+    void resetModified() { _isModified = false; _pendingProperties.clear(); }
+    const std::map<std::string, std::map<std::string, std::string>>& pendingProperties() const { return _pendingProperties; }
 
 
 private:
@@ -54,4 +55,5 @@ private:
     std::map<std::string, std::map<std::string, std::map<std::string, bool>>> _memberSchedules;
 
     bool _isModified = false;
+    std::map<std::string, std::map<std::string, std::string>> _pendingProperties;
 };

@@ -6,7 +6,7 @@
 #include <pybind11/stl.h>
 #include "scriptapi.h"
 #include "rconsole.h"
-#include "componentmanager.h"
+#include <stdexcept>
 
 namespace py = pybind11;
 
@@ -57,14 +57,14 @@ void ScriptAPI::debug(const std::string& msg) const {
 }
 
 void ScriptAPI::setMemberPropertyToModel(const std::string& memberId, const std::string& key, const std::string& value) {
-    QString qId = QString::fromStdString(memberId);
-	QUuid uuid = QUuid::fromString(qId);
-    QString qKey = QString::fromStdString(key);
-    QString qValue = QString::fromStdString(value);
-
-    auto* mComp = ComponentManager::instance()->getComponent<MemberInfoComponent>();
-    auto controller = mComp->getController();
-	controller->updateMemberProperty(uuid, qKey, qValue);
+    auto member = _memberProperties.find(memberId);
+    if (member == _memberProperties.end()) {
+        throw std::invalid_argument("Unknown member ID");
+    }
+    const auto property = member->second.find(key);
+    if (property != member->second.end() && property->second == value) return;
+    member->second[key] = value;
+    _pendingProperties[memberId][key] = value;
     _isModified = true;
 }
 

@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QDebug>
 #include <set>
+#include <stdexcept>
 #include <QCoreApplication>
 #include <QDir>
 #include "componentmanager.h"
@@ -65,6 +66,7 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
     QString& debugMsg)
 {
     qDebug() << "运行脚本" << scriptPath;
+    debugMsg.clear();
     QHash<QString, QList<QUuid>> schedule;
     if (!_isInitialized) {
         debugMsg = "Python 引擎未初始化";
@@ -119,7 +121,6 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
 
         //沙盒
         py::dict globals;
-        py::dict locals;
 
         py::module_ builtins_mod = py::module_::import("builtins");
         py::dict safe_builtins;
@@ -158,34 +159,34 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
         std::string scriptCode = scriptFile.readAll().toStdString();
 
         py::module_::import("rabbit_api");
-        locals["api"] = py::cast(&api);
-        locals["target_per_cell"] = targetPerCell;
+        globals["api"] = py::cast(&api, py::return_value_policy::reference);
+        globals["target_per_cell"] = targetPerCell;
 
         //用户可以不写下面这些import
         globals["random"] = py::module_::import("random");
         globals["datetime"] = py::module_::import("datetime");
 
-        auto* mComp = ComponentManager::instance()->getComponent<MemberInfoComponent>();
-        auto* undoStack = mComp->getController()->getUndoStack();
-
         api.resetModified();
-        undoStack->beginMacro("PythonChangedData");
+        // Functions must see the same namespace as top-level imports and helpers.
+        py::exec(scriptCode, globals, globals);
 
-        py::exec(scriptCode, globals, locals);
-
-        if (!locals.contains("generate_schedule")) {
+        if (!globals.contains("generate_schedule")) {
             debugMsg = "脚本中未定义规定的入口函数: generate_schedule(api, target_per_cell)";
             return schedule;
         }
 
-        py::function generateFunc = locals["generate_schedule"];
-        py::object pyResult = generateFunc(locals["api"], targetPerCell);
+        py::function generateFunc = globals["generate_schedule"];
+        py::object pyResult = generateFunc(globals["api"], targetPerCell);
 
         try {
             py::dict pyResultDict = pyResult.cast<py::dict>();
 
             for (auto item : pyResultDict) {
                 QString taskKey = QString::fromStdString(item.first.cast<std::string>());
+                if (!taskCandidates.contains(taskKey)) {
+                    debugMsg = QString("脚本返回了未知任务槽: %1").arg(taskKey);
+                    return {};
+                }
                 QList<QUuid> uids;
 
                 try {
@@ -193,25 +194,47 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
 
                     for (auto pyUid : pyList) {
                         std::string uidStr = pyUid.cast<std::string>();
-                        uids.append(QUuid(QString::fromStdString(uidStr)));
+                        QUuid uid(QString::fromStdString(uidStr));
+                        if (uid.isNull() || apiMemberProps.find(uid.toString().toStdString()) == apiMemberProps.end()) {
+                            throw std::invalid_argument("Schedule contains an unknown member ID");
+                        }
+                        if (!uids.contains(uid)) uids.append(uid);
                     }
                 }
                 catch (const std::exception& e) {
-                    undoStack->endMacro();
-                    qDebug() << "警告：任务" << taskKey << "的值不是字符串列表，具体错误:" << e.what();
+                    debugMsg = QString("任务 %1 的排班结果无效: %2").arg(taskKey, QString::fromUtf8(e.what()));
+                    return {};
                 }
 
                 schedule.insert(taskKey, uids);
             }
         }
         catch (const std::exception& e) {
-            undoStack->endMacro();
             debugMsg = QString("数据格式转换异常: %1").arg(e.what());
-            return schedule;
+            return {};
         }
-        undoStack->endMacro();
         if (api.hasModified()) {
-            Q_EMIT scriptChangedData(true);
+            const auto updates = api.pendingProperties();
+            // The worker only collects changes. Models and undo stacks belong to the GUI thread.
+            QMetaObject::invokeMethod(QCoreApplication::instance(), [this, updates]() {
+                auto* component = ComponentManager::instance()->getComponent<MemberInfoComponent>();
+                if (!component || !component->getController() || !component->getModel()) return;
+                auto* model = component->getModel();
+                for (const auto& member : updates) {
+                    if (model->getRowById(QUuid(QString::fromStdString(member.first))) < 0) return;
+                }
+                auto* controller = component->getController();
+                auto* undoStack = controller->getUndoStack();
+                undoStack->beginMacro("PythonChangedData");
+                for (const auto& member : updates) {
+                    const QUuid id(QString::fromStdString(member.first));
+                    for (const auto& property : member.second) {
+                        controller->updateMemberProperty(id, QString::fromStdString(property.first), QString::fromStdString(property.second));
+                    }
+                }
+                undoStack->endMacro();
+                Q_EMIT scriptChangedData(true);
+            }, Qt::QueuedConnection);
         }
     }
     catch (const py::error_already_set& e) {

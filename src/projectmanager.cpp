@@ -11,7 +11,70 @@
 #include <QEventLoop>
 #include "projectworker.h"
 #include <QThread>
+#include <QSet>
+#include <algorithm>
 #include "backendworker.h"
+
+namespace {
+bool isStringArray(const QJsonValue& value) {
+    if (!value.isArray()) return false;
+    for (const auto& item : value.toArray()) {
+        if (!item.isString()) return false;
+    }
+    return true;
+}
+
+bool isValidMemberSection(const QJsonValue& value) {
+    if (!value.isObject()) return false;
+    const auto section = value.toObject();
+    if (!isStringArray(section["allProperties"]) || !section["visibility"].isObject()
+        || !section["list"].isArray()) return false;
+    QSet<QUuid> ids;
+    for (const auto& member : section["list"].toArray()) {
+        if (!member.isObject()) return false;
+        const auto object = member.toObject();
+        const QUuid id(object["id"].toString());
+        if (id.isNull() || ids.contains(id) || !object["properties"].isObject()
+            || !isStringArray(object["scheduleDates"]) || !isStringArray(object["scheduleTimes"])
+            || !object["scheduleMap"].isObject()) return false;
+        ids.insert(id);
+        const auto schedule = object["scheduleMap"].toObject();
+        for (auto it = schedule.begin(); it != schedule.end(); ++it) {
+            if (!it.value().isObject()) return false;
+            const auto times = it.value().toObject();
+            for (auto time = times.begin(); time != times.end(); ++time) {
+                if (!time.value().isBool()) return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool isValidProject(const QJsonObject& root) {
+    if ((root.contains("version") && !root["version"].isString())
+        || (root.contains("projectName") && !root["projectName"].isString())
+        || !isValidMemberSection(root["memberData"]) || !root["editorConfig"].isObject()) return false;
+    const auto editor = root["editorConfig"].toObject();
+    const int mode = editor["currentMode"].toInt(-1);
+    if ((mode != EditorDutyModel::WeekMode && mode != EditorDutyModel::DateMode)
+        || !isStringArray(editor["timeRows"]) || !isStringArray(editor["weekColumns"])
+        || !isStringArray(editor["dateColumns"]) || !editor["assignments"].isObject()) return false;
+    const auto assignments = editor["assignments"].toObject();
+    for (auto it = assignments.begin(); it != assignments.end(); ++it) {
+        if (!isStringArray(it.value())) return false;
+        for (const auto& id : it.value().toArray()) {
+            if (QUuid(id.toString()).isNull()) return false;
+        }
+    }
+    return true;
+}
+
+void clearUndoHistory() {
+    auto* components = ComponentManager::instance();
+    components->getComponent<MemberInfoComponent>()->getController()->getUndoStack()->clear();
+    components->getComponent<EditorDutyComponent>()->getController()->getUndoStack()->clear();
+}
+}
 
 ProjectManager* ProjectManager::instance() {
     static ProjectManager instance;
@@ -29,14 +92,7 @@ ProjectManager::ProjectManager(QObject *parent)
     connect(mModel, &QAbstractItemModel::dataChanged, this, [this]() {
         setDirty(true);
         });
-    connect(mModel, &QAbstractItemModel::rowsInserted, this, [this]() {
-        setDirty(true);
-        });
-    connect(mModel, &QAbstractItemModel::rowsRemoved, this, [this]() {
-        setDirty(true);
-        });
-
-    connect(eModel, &QAbstractItemModel::dataChanged, this, [this]() {
+    connect(eModel, &EditorDutyModel::assignmentsChanged, this, [this]() {
         setDirty(true);
         });
 
@@ -46,6 +102,33 @@ ProjectManager::ProjectManager(QObject *parent)
     connect(sModel, &QAbstractItemModel::rowsInserted, this, [this]() {
         setDirty(true);
         });
+
+    // Structural edits and hidden fields are saved too, even when no visible cell changes.
+    for (auto* model : { static_cast<QAbstractItemModel*>(mModel),
+                         static_cast<QAbstractItemModel*>(eModel) }) {
+        connect(model, &QAbstractItemModel::modelReset, this, [this]() { setDirty(true); });
+        connect(model, &QAbstractItemModel::rowsInserted, this, [this]() { setDirty(true); });
+        connect(model, &QAbstractItemModel::rowsRemoved, this, [this]() { setDirty(true); });
+        connect(model, &QAbstractItemModel::columnsInserted, this, [this]() { setDirty(true); });
+        connect(model, &QAbstractItemModel::columnsRemoved, this, [this]() { setDirty(true); });
+    }
+    connect(mModel, &MemberInfoModel::propertyListChanged, this, [this]() { setDirty(true); });
+    connect(sModel, &QAbstractItemModel::rowsRemoved, this, [this]() { setDirty(true); });
+    connect(sModel, &QAbstractItemModel::columnsInserted, this, [this]() { setDirty(true); });
+    connect(sModel, &QAbstractItemModel::columnsRemoved, this, [this]() { setDirty(true); });
+    connect(sModel, &QAbstractItemModel::headerDataChanged, this, [this]() { setDirty(true); });
+    connect(ComponentManager::instance()->getComponent<MemberInfoComponent>()->getController()->getUndoStack(),
+        &QUndoStack::indexChanged, this, [this]() { setDirty(true); });
+    connect(ComponentManager::instance()->getComponent<EditorDutyComponent>()->getController()->getUndoStack(),
+        &QUndoStack::indexChanged, this, [this]() { setDirty(true); });
+}
+
+ProjectManager::~ProjectManager() {
+    const auto threads = findChildren<QThread*>(QString(), Qt::FindDirectChildrenOnly);
+    for (auto* thread : threads) {
+        thread->quit();
+        thread->wait();
+    }
 }
 
 QJsonObject ProjectManager::serializeData() {
@@ -136,27 +219,22 @@ void ProjectManager::deserializeData(const QJsonObject& root) {
     auto* eModel = ComponentManager::instance()->getComponent<EditorDutyComponent>()->getModel();
 
     ProjectSetting::instance()->_projectName = root["projectName"].toString();
-    QString version = root["version"].toString();
-    ProjectSetting::instance()->_toleranceValue = root["toleranceValue"].toInt(0);
+    ProjectSetting::instance()->_toleranceValue = qBound(0, root["toleranceValue"].toInt(0), 5);
 
+    ProjectSetting::instance()->_enableSerchDateRange = false;
+    ProjectSetting::instance()->_searchStartDate = QDate::currentDate();
+    ProjectSetting::instance()->_searchEndDate = QDate::currentDate().addMonths(3);
     if (root.contains("dateSearchConfig")) {
         QJsonObject dateObj = root["dateSearchConfig"].toObject();
-        ProjectSetting::instance()->_enableSerchDateRange = dateObj["enabled"].toBool();
         QDate sDate = QDate::fromString(dateObj["startDate"].toString(), Qt::ISODate);
         QDate eDate = QDate::fromString(dateObj["endDate"].toString(), Qt::ISODate);
 
-        if (sDate.isValid() && eDate.isValid()) {
+        if (sDate.isValid() && eDate.isValid() && sDate <= eDate) {
+            ProjectSetting::instance()->_enableSerchDateRange = dateObj["enabled"].toBool();
             ProjectSetting::instance()->_searchStartDate = sDate;
             ProjectSetting::instance()->_searchEndDate = eDate;
         }
     }
-    else {
-        //如果旧文件中没有这个字段就执行重置
-        ProjectSetting::instance()->_enableSerchDateRange = false;
-        ProjectSetting::instance()->_searchStartDate = QDate::currentDate();
-        ProjectSetting::instance()->_searchEndDate = QDate::currentDate().addMonths(3);
-    }
-
     QJsonObject memberSection = root["memberData"].toObject();
     deserializeMemberData(memberSection);
 
@@ -180,7 +258,10 @@ void ProjectManager::deserializeData(const QJsonObject& root) {
         }
         restoredHash.insert(it.key(), ids);
     }
-    eModel->setSelectedIdsMap(restoredHash);
+    // Loading replaces both modes; setSelectedIdsMap deliberately merges the inactive mode.
+    eModel->_selectedIdsMap = restoredHash;
+    eModel->_cellDataMap.clear();
+    eModel->_selectedMembersMap.clear();
 
     eModel->endResetModel();
     
@@ -192,7 +273,9 @@ void ProjectManager::deserializeMemberData(const QJsonObject& memberSection) {
     mModel->beginResetModel();
 
     mModel->_allProperties = memberSection["allProperties"].toVariant().toStringList();
+    if (!mModel->_allProperties.contains("姓名")) mModel->_allProperties.prepend("姓名");
     mModel->_properties = memberSection["visibility"].toObject().toVariantMap();
+    mModel->_properties["姓名"] = true;
     mModel->_visibleColumns.clear();
     mModel->_visibleColumns << "姓名";
     for (auto it = mModel->_properties.begin(); it != mModel->_properties.end(); ++it) {
@@ -276,24 +359,27 @@ void ProjectManager::exportMembersAs(const QString& filePath) {
             scheduleObj[dateIt.key()] = timeObj;
         }
         mObj["scheduleMap"] = scheduleObj;
+        mObj["enableScheduling"] = data->enableScheduling;
+        mObj["scheduleFileSource"] = data->scheduleFileSource;
         memberArray.append(mObj);
     }
     memberSection["list"] = memberArray;
     root["memberData"] = memberSection;
 
-    QThread* thread = new QThread;
+    QThread* thread = new QThread(this);
     ProjectWorker* worker = new ProjectWorker;
     worker->moveToThread(thread);
+    connect(worker, &ProjectWorker::saveDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::loadDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::error, thread, &QThread::quit, Qt::DirectConnection);
 
     connect(thread, &QThread::started, worker, [=]() { worker->doSave(filePath, root); });
-    connect(worker, &ProjectWorker::saveDone, this, [this, thread]() {
+    connect(worker, &ProjectWorker::saveDone, this, [this]() {
         Q_EMIT exportFinished(true);
-        thread->quit();
         });
-    connect(worker, &ProjectWorker::error, this, [this, thread](QString msg) {
+    connect(worker, &ProjectWorker::error, this, [this](QString msg) {
         Q_EMIT operationError(msg);
         Q_EMIT exportFinished(false);
-        thread->quit();
         });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
@@ -303,30 +389,45 @@ void ProjectManager::exportMembersAs(const QString& filePath) {
 void ProjectManager::importMembersAsync(const QString& filePath) {
     if (filePath.isEmpty()) return;
 
-    QThread* thread = new QThread;
+    QThread* thread = new QThread(this);
     ProjectWorker* worker = new ProjectWorker;
     worker->moveToThread(thread);
+    connect(worker, &ProjectWorker::saveDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::loadDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::error, thread, &QThread::quit, Qt::DirectConnection);
 
     connect(thread, &QThread::started, worker, [=]() {
         worker->doLoad(filePath);
         });
-    connect(worker, &ProjectWorker::loadDone, this, [this, thread](const QJsonObject& data) {
-        if (data["type"].toString() != "MemberExport") {
+    connect(worker, &ProjectWorker::loadDone, this, [this](const QJsonObject& data) {
+        if (data["type"].toString() != "MemberExport" || !isValidMemberSection(data["memberData"])) {
             Q_EMIT operationError("导入失败：该文件不是有效的成员导出文件(.rmem)。");
             Q_EMIT importMembersFinished(false);
         }
         else {
+            clearUndoHistory();
             this->deserializeMemberData(data["memberData"].toObject());
+            auto* editor = ComponentManager::instance()->getComponent<EditorDutyComponent>()->getModel();
+            QSet<QUuid> validIds;
+            auto* members = ComponentManager::instance()->getComponent<MemberInfoComponent>()->getModel();
+            for (int row = 0; row < members->rowCount(); ++row) validIds.insert(members->getMemberDataPtr(row)->id);
+            for (auto it = editor->_selectedIdsMap.begin(); it != editor->_selectedIdsMap.end(); ++it) {
+                auto& ids = it.value();
+                ids.erase(std::remove_if(ids.begin(), ids.end(), [&validIds](const QUuid& id) {
+                    return !validIds.contains(id);
+                }), ids.end());
+            }
+            editor->_cellDataMap.clear();
+            editor->_selectedMembersMap.clear();
+            editor->refreshView();
             this->setDirty(true);
             Q_EMIT importMembersFinished(true);
         }
-        thread->quit();
         });
 
-    connect(worker, &ProjectWorker::error, this, [this, thread](QString msg) {
+    connect(worker, &ProjectWorker::error, this, [this](QString msg) {
         Q_EMIT operationError("文件读取错误: " + msg);
         Q_EMIT importMembersFinished(false);
-        thread->quit();
         });
 
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
@@ -344,11 +445,14 @@ bool ProjectManager::newProject(const QString& name) {
     auto* mModel = ComponentManager::instance()->getComponent<MemberInfoComponent>()->getModel();
     auto* eModel = ComponentManager::instance()->getComponent<EditorDutyComponent>()->getModel();
 
-	ProjectSetting::instance()->reset();//重置全局配置
+    ++_projectGeneration;
+    clearUndoHistory();
+    ProjectSetting::instance()->reset();//重置全局配置
     ProjectSetting::instance()->_projectName = name;
 
     mModel->reset();
     eModel->reset();
+    eModel->setColumnMode(EditorDutyModel::WeekMode);
 
     //重置状态机
     _currentFilePath.clear();
@@ -366,12 +470,22 @@ ProjectManager::SaveStatus ProjectManager::checkSaveStatus() const {
 }
 
 void ProjectManager::openProject(const QString& filePath) {
-    QThread* thread = new QThread;
+    if (filePath.isEmpty()) return;
+    QThread* thread = new QThread(this);
     ProjectWorker* worker = new ProjectWorker;
     worker->moveToThread(thread);
+    connect(worker, &ProjectWorker::saveDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::loadDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::error, thread, &QThread::quit, Qt::DirectConnection);
 
     connect(thread, &QThread::started, worker, [=]() { worker->doLoad(filePath); });
-    connect(worker, &ProjectWorker::loadDone, this, [this, thread, filePath](const QJsonObject& data) {
+    connect(worker, &ProjectWorker::loadDone, this, [this, filePath](const QJsonObject& data) {
+        if (!isValidProject(data)) {
+            Q_EMIT operationError("文件结构无效，不是有效的 RabbitRoll 项目文件，当前项目未更改。");
+            return;
+        }
+        ++_projectGeneration;
+        clearUndoHistory();
         this->deserializeData(data); 
         QFileInfo fileInfo(filePath);
         ProjectSetting::instance()->_projectName = fileInfo.completeBaseName();
@@ -379,12 +493,10 @@ void ProjectManager::openProject(const QString& filePath) {
         this->_currentFilePath = filePath;
         this->setDirty(false);
         Q_EMIT projectLoaded();
-        thread->quit();
         });
 
-    connect(worker, &ProjectWorker::error, this, [this, thread](QString msg) {
+    connect(worker, &ProjectWorker::error, this, [this](QString msg) {
         Q_EMIT operationError(msg);
-        thread->quit();
         });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
@@ -402,29 +514,39 @@ void ProjectManager::saveProject() {
 
 
 void ProjectManager::saveProjectAs(const QString& filePath) {
-    if (filePath.isEmpty()) return;
+    if (filePath.isEmpty()) {
+        Q_EMIT saveFinished(false);
+        return;
+    }
 
     QJsonObject root = serializeData();
+    const QString savedName = QFileInfo(filePath).completeBaseName();
+    root["projectName"] = savedName;
+    const auto savedRevision = _changeRevision;
+    const auto savedGeneration = _projectGeneration;
 
-    QThread* thread = new QThread;
+    QThread* thread = new QThread(this);
     ProjectWorker* worker = new ProjectWorker;
     worker->moveToThread(thread);
+    connect(worker, &ProjectWorker::saveDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::loadDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::error, thread, &QThread::quit, Qt::DirectConnection);
 
     connect(thread, &QThread::started, worker, [=]() {
         worker->doSave(filePath, root); 
         });
-    connect(worker, &ProjectWorker::saveDone, this, [this, thread, filePath]() {
-        this->_currentFilePath = filePath;
-        this->setDirty(false);
-        Q_EMIT projectStatusChanged();
+    connect(worker, &ProjectWorker::saveDone, this, [this, filePath, savedName, savedRevision, savedGeneration]() {
+        if (_projectGeneration == savedGeneration) {
+            this->_currentFilePath = filePath;
+            ProjectSetting::instance()->_projectName = savedName;
+            if (_changeRevision == savedRevision) this->setDirty(false);
+            Q_EMIT projectStatusChanged();
+        }
         Q_EMIT saveFinished(true);
-        thread->quit();
         });
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    connect(worker, &ProjectWorker::error, this, [this, thread](QString msg) {
+    connect(worker, &ProjectWorker::error, this, [this](QString msg) {
         Q_EMIT operationError(msg);
         Q_EMIT saveFinished(false);
-        thread->quit();
         });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
@@ -432,6 +554,7 @@ void ProjectManager::saveProjectAs(const QString& filePath) {
 }
 
 void ProjectManager::setDirty(bool dirty) {
+    if (dirty) ++_changeRevision;
     if (_isDirty == dirty) return;
 
     _isDirty = dirty;
@@ -483,21 +606,22 @@ void ProjectManager::exportScheduleAs(const QString& filePath, const QJsonObject
     root["exportTime"] = QDateTime::currentDateTime().toString(Qt::ISODate);
     root["scheduleData"] = scheduleData;
 
-    QThread* thread = new QThread;
+    QThread* thread = new QThread(this);
     ProjectWorker* worker = new ProjectWorker;
     worker->moveToThread(thread);
+    connect(worker, &ProjectWorker::saveDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::loadDone, thread, &QThread::quit, Qt::DirectConnection);
+    connect(worker, &ProjectWorker::error, thread, &QThread::quit, Qt::DirectConnection);
 
     connect(thread, &QThread::started, worker, [=]() {
         worker->doSave(filePath, root);
         });
-    connect(worker, &ProjectWorker::saveDone, this, [this, thread]() {
+    connect(worker, &ProjectWorker::saveDone, this, [this]() {
         Q_EMIT scheduleExportFinished(true);
-        thread->quit();
         });
-    connect(worker, &ProjectWorker::error, this, [this, thread](QString msg) {
+    connect(worker, &ProjectWorker::error, this, [this](QString msg) {
         Q_EMIT operationError(msg);
         Q_EMIT scheduleExportFinished(false);
-        thread->quit();
         });
 
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);

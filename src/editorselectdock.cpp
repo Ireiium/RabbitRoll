@@ -28,6 +28,15 @@ EditorSelectDock::EditorSelectDock(QWidget* parent)
 
     initUi();
 
+    auto clearInvalidTarget = [this]() {
+        if (_currentIndex.isValid()) return;
+        clearListLayout();
+        hide();
+    };
+    connect(eComp->getModel(), &QAbstractItemModel::modelReset, this, clearInvalidTarget);
+    connect(eComp->getModel(), &QAbstractItemModel::rowsRemoved, this, clearInvalidTarget);
+    connect(eComp->getModel(), &QAbstractItemModel::columnsRemoved, this, clearInvalidTarget);
+
     connect(IdleMatchService::instance(), &IdleMatchService::precalculationFinished, this, [=]() {
         updateList();
         });
@@ -89,6 +98,12 @@ void EditorSelectDock::initUi()
 
 void EditorSelectDock::setTargetCell(const QModelIndex& index, bool isCalculating)
 {
+    if (!index.isValid()) {
+        _currentIndex = QPersistentModelIndex();
+        clearListLayout();
+        hide();
+        return;
+    }
     _currentIndex = index;
     if (isCalculating) {
         _busyRing->setIsBusying(true);

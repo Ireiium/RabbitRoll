@@ -18,6 +18,9 @@ friend class EditorDutyController;
 friend class IdleMatchService;
 friend class ProjectManager;
 
+Q_SIGNALS:
+    void assignmentsChanged();
+
 private Q_SLOTS:
     void onMembersAboutToBeRemoved(const QModelIndex& parent, int first, int last);
     void updateDateSlot(int column, QDate newDate);

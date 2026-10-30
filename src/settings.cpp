@@ -1,6 +1,5 @@
 #include "settings.h"
 #include "lock.h"
-#include <QtGlobal>
 
 Settings* Settings::instance()
 {
@@ -120,7 +119,6 @@ QString Settings::getAPI() const {
     if (!key.isEmpty()) {
         return key;
     }
-
     const QByteArray encrypted = m_settings->value("AIApiKeyEncrypted").toByteArray();
     return QString::fromUtf8(deobfuscateKey(encrypted)).trimmed();
 }

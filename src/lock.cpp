@@ -1,6 +1,6 @@
 #include "lock.h"
 
-// Legacy local-settings obfuscation only; this is not an API credential or encryption.
+// Legacy local obfuscation; this is not secure encryption or a service credential.
 static const QByteArray OBFUSCATION_KEY = QByteArrayLiteral("RabbitRoll2026!@#SecreT");
 
 QByteArray xorTransform(const QByteArray& data, const QByteArray& key) {
