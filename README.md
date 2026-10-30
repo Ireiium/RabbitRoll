@@ -71,6 +71,8 @@ RabbitRoll（兔子排班）是一款专注于解决团队排班问题的软件�
 
 ## RabbitRoll 课表读取助手
 
+[下载链接](https://github.com/Ireiium/ClassScheduleReader_ForRabbitRoll)：点击`Code`-->`Download Zip` 下载后解压即可。
+
 高校团队中值班的安排往往受到课程表的约束。因此，能够高效获取成员的课程表，是解决排班问题的重要步骤。
 
 RabbitRoll 提供专门的课表读取助手浏览器插件，方便成员快速获取自己的课表。读取课表后以 `.rsch` 格式下载，可以直接导入 RabbitRoll 的个人时间表中。
@@ -80,7 +82,7 @@ RabbitRoll 提供专门的课表读取助手浏览器插件，方便成员快速
 ### 导入与使用
 
 1. 打开浏览器的扩展管理页面，开启【开发人员模式】。
-2. 点击【加载解压缩的扩展】，找到并选择 `GetClassForRabbitRoll` 文件夹，确保插件已开启。
+2. 点击【加载解压缩的扩展】，找到并选择 `ClassScheduleReader_ForRabbitRoll` 文件夹，确保插件已开启。
 3. 登录学校教务系统，进入自己的课程表页面。以武汉工程大学为例，进入【学期理论课表】，确保当前【周次】为全部。
 4. 打开 RabbitRoll 课表读取助手，点击导出 `.rsch` 文件。若不成功，刷新页面重试。
 5. 在 RabbitRoll 的成员个人时间表中导入该文件，选择好开学的第一天，点击【开始导入】。
@@ -318,10 +320,3 @@ api.debug(f"当前共有 {len(api.get_all_members())} 位成员")
 | [pybind11](https://github.com/pybind/pybind11) | BSD-style License |
 
 本软件以动态链接方式使用 Qt 库。您有权在遵守 LGPLv3 协议的前提下，通过替换本软件目录下的 Qt 动态链接库文件，以实现测试、升级或修改的目的。您可以访问 Qt 官网获取完整源码。
-
-## 作者信息
-
-Ireiium
-
-- GitHub：[Ireiium](https://github.com/Ireiium)
-- 联系邮箱：ireiiumbox@163.com
