@@ -1,5 +1,6 @@
 ﻿#include "mainwindow.h"
 #include "ElaApplication.h"
+#include "ElaTheme.h"
 #include <QApplication>
 #include "ScriptEngine.h"
 #include "rconsole.h"
@@ -27,6 +28,7 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     ElaApplication::eApp->init();
+    eTheme->setThemeMode(Settings::instance()->getThemeMode() == 0 ? ElaThemeType::Light : ElaThemeType::Dark);
 
     ScriptEngine::instance()->init();
 

@@ -1,4 +1,3 @@
-# DeepSeek-MoE 2026.4.24
 import random
 
 def generate_schedule(api, target_per_cell):    

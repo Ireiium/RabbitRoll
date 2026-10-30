@@ -313,7 +313,7 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
 
 
     //主题恢复
-    int themeMode = Settings::instance()->getThemeMode();//默认随主题
+    int themeMode = Settings::instance()->getThemeMode();//默认日间主题
     themeGroup->button(themeMode)->setChecked(true);
     eTheme->setThemeMode(themeMode == 0 ? ElaThemeType::Light : ElaThemeType::Dark);
 

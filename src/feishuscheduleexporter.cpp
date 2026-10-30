@@ -246,7 +246,7 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
     }
     if (memberRows.isEmpty()) {
         error = "模板只有表头，没有人员名单。请在飞书目标考勤组的“排班表 → 导入/导出 → 当前排班表”"
-                "下载包含姓名和 UID 的文件，放入 Excel template 文件夹后在设置中选择；不能仅凭姓名生成飞书 UID。";
+                "下载包含姓名和 UID 的文件，放入 excelTemplate 文件夹后在设置中选择；不能仅凭姓名生成飞书 UID。";
         return false;
     }
     QMap<QString, QUuid> nameIds;

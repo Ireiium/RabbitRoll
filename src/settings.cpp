@@ -91,8 +91,10 @@ void Settings::setExcelTemplate(const QString& fileName) {
 }
 
 //UI和窗口设置
-int Settings::getThemeMode() const { 
-    return m_settings->value("ThemeMode", 0).toInt(); }
+int Settings::getThemeMode() const {
+    // First launch and unrecognized saved values use the light theme.
+    return m_settings->value("ThemeMode", 0).toInt() == 1 ? 1 : 0;
+}
 void Settings::setThemeMode(int mode) {
     m_settings->setValue("ThemeMode", mode); 
 }

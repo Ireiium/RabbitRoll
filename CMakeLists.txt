@@ -66,8 +66,9 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     RENAME "LICENSE_RabbitRoll_MIT.txt"
 )
 install(CODE "
-    set(SOURCE_DIR [[${CMAKE_CURRENT_SOURCE_DIR}/Excel template]])
-    set(DESTINATION_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Excel template\")
+    set(SOURCE_DIR [[${CMAKE_CURRENT_SOURCE_DIR}/excelTemplate]])
+    set(DESTINATION_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/excelTemplate\")
+    set(COPY_TEMPLATE_FILES OFF)
     include([[${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyExcelTemplates.cmake]])
 ")
 

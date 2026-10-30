@@ -184,8 +184,8 @@ add_dependencies(RabbitRoll RabbitRollExampleScripts)
 
 add_custom_target(RabbitRollExcelTemplates
     COMMAND "${CMAKE_COMMAND}"
-        "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/Excel template"
-        "-DDESTINATION_DIR=$<TARGET_FILE_DIR:RabbitRoll>/Excel template"
+        "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/excelTemplate"
+        "-DDESTINATION_DIR=$<TARGET_FILE_DIR:RabbitRoll>/excelTemplate"
         -P "${PROJECT_SOURCE_DIR}/cmake/CopyExcelTemplates.cmake"
     COMMENT "RabbitRoll: deploying Excel templates"
     VERBATIM

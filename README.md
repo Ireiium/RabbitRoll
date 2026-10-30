@@ -157,7 +157,7 @@ option(ENABLE_AI "Build with DeepSeek AI scheduling support" ON)
 
 ## RabbitRoll 课表读取助手
 
-[下载链接](https://github.com/Ireiium/ClassScheduleReader_ForRabbitRoll)：点击`Code`-->`Download Zip` 下载后解压即可。
+[下载链接](https://github.com/Ireiium/GetClassForRabbitRoll)：点击`Code`-->`Download Zip` 下载后解压即可。
 
 高校团队中值班的安排往往受到课程表的约束。因此，能够高效获取成员的课程表，是解决排班问题的重要步骤。
 

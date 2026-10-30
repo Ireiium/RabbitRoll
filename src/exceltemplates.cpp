@@ -7,7 +7,7 @@
 
 QString ExcelTemplates::directory()
 {
-    return QDir(QCoreApplication::applicationDirPath()).filePath("Excel template");
+    return QDir(QCoreApplication::applicationDirPath()).filePath("excelTemplate");
 }
 
 QString ExcelTemplates::defaultFileName()
@@ -31,7 +31,12 @@ QString ExcelTemplates::selectedFilePath(QString& error)
 {
     error.clear();
     const auto name = Settings::instance()->getExcelTemplate();
-    if (name.isEmpty() || name.contains('/') || name.contains('\\') || QFileInfo(name).isAbsolute()
+    if (name.isEmpty()) {
+        error = "尚未选择模板，请将 .xlsx 文件放入以下目录，再到“设置 → 导出设置”中选择：\n"
+            + QDir::toNativeSeparators(directory());
+        return {};
+    }
+    if (name.contains('/') || name.contains('\\') || QFileInfo(name).isAbsolute()
         || QFileInfo(name).suffix().compare("xlsx", Qt::CaseInsensitive) != 0) {
         error = "模板设置无效，请在“设置 → 导出设置”中选择指定文件夹内的 .xlsx 文件。";
         return {};
@@ -44,7 +49,7 @@ QString ExcelTemplates::selectedFilePath(QString& error)
     const auto file = QFileInfo(QDir(directory()).filePath(name));
     if (!file.isFile() || !file.isReadable() || file.isSymLink()
         || file.canonicalPath().compare(QDir(directory()).canonicalPath(), Qt::CaseInsensitive) != 0) {
-        error = "只能读取 Excel template 文件夹内的模板文件，不能读取外部链接。";
+        error = "只能读取 excelTemplate 文件夹内的模板文件，不能读取外部链接。";
         return {};
     }
     return file.canonicalFilePath();
