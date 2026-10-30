@@ -58,6 +58,7 @@ private:
     QAction* _saveBtn{ nullptr };
     QAction* _saveAsBtn{ nullptr };
     QAction* _exportExcelBtn{ nullptr };
+    QAction* _exportFeishuExcelBtn{ nullptr };
     QAction* _exportMemberBtn{ nullptr };
     QAction* _exportMembersExcelBtn{ nullptr };
     QAction* _importMemberBtn{ nullptr };

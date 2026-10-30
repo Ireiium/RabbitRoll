@@ -174,6 +174,7 @@ void MainWindow::initialWindow()
     ElaMenu* buildMenu = menuBar->addMenu(ElaIconType::AtomSimple, "生成");
     buildMenu->setMenuItemHeight(25);
     _exportExcelBtn = buildMenu->addElaIconAction(ElaIconType::FileExcel, "导出值班表为Excel");
+    _exportFeishuExcelBtn = buildMenu->addElaIconAction(ElaIconType::FileExcel, "导出飞书排班表...");
     buildMenu->addSeparator();
     _exportMemberBtn = buildMenu->addElaIconAction(ElaIconType::FileArrowUp, "导出成员列表");
     _exportMembersExcelBtn = buildMenu->addElaIconAction(ElaIconType::FileExcel, "导出成员列表为Excel");
@@ -233,6 +234,7 @@ void MainWindow::initialWindow()
     connect(_saveBtn, &QAction::triggered, _actionController, &ProjectActionController::handleSaveProject);
     connect(_saveAsBtn, &QAction::triggered, _actionController, &ProjectActionController::handleSaveAsProject);
     connect(_exportExcelBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportScheduleExcel);
+    connect(_exportFeishuExcelBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportFeishuScheduleExcel);
     connect(_exportMembersExcelBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportMembersExcel);
     connect(_exportMemberBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportMembersData);
     connect(_importMemberBtn, &QAction::triggered, _actionController, &ProjectActionController::handleImportMembersData);
@@ -296,6 +298,7 @@ void MainWindow::setProjectWorkspaceEnabled(bool enabled) {
     if (_saveBtn) _saveBtn->setEnabled(enabled);
     if (_saveAsBtn) _saveAsBtn->setEnabled(enabled);
     if (_exportExcelBtn) _exportExcelBtn->setEnabled(enabled);
+    if (_exportFeishuExcelBtn) _exportFeishuExcelBtn->setEnabled(enabled);
     if (_exportMemberBtn) _exportMemberBtn->setEnabled(enabled);
     if (_exportMembersExcelBtn) _exportMembersExcelBtn->setEnabled(enabled);
     if (_importMemberBtn) _importMemberBtn->setEnabled(enabled);

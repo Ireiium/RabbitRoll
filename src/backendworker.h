@@ -4,6 +4,7 @@
 #include <QDate>
 #include <QStringList>
 #include "memberinfomodel.h"
+#include "feishuscheduleexporter.h"
 #include <atomic>
 
 class AIServiceInterface;
@@ -24,6 +25,7 @@ public Q_SLOTS:
     void batchMembersWithFormat(const QStringList& lines, const QStringList& format);
     void scheduleImport(const QJsonObject& json, QDate startDate);
     void exportExcel(const QString& filePath, const QList<ExportTableData>& tablesData);
+    void exportFeishuExcel(const FeishuExportRequest& request);
     void autoSchedule(const QHash<QString, QStringList>& available, int targetPerCell, bool enablePrioritize, bool isMultipate, int mode);
     void scriptSchedule(const QString& scriptPath, int targetPerCell, const QHash<QString, QStringList>& available, const QList<MemberInfoModel::MemberData>& allMembersData);
     void searchMember(const QList<MemberInfoModel::MemberData>& allMembersData);
@@ -38,6 +40,7 @@ Q_SIGNALS:
     void batchMembersWithFormatFinished(const QList<QVariantMap>& membersData, const QStringList& format);
     void scheduleImportFinished(const QJsonObject& schedule);
     void excelExportFinished(bool success, const QString& debugMsg);
+    void feishuExportFinished(bool success, const QString& message);
     void autoScheduleFinished(const QHash<QString, QList<QUuid>>& schedule);
     void scriptScheduleFinished(const QHash<QString, QList<QUuid>>& schedule, const QString& debugMsg);
     void searchMemberFinished(const QStringList& names, const QList<QVariantMap>& dataList);
@@ -61,4 +64,5 @@ private:
 
 Q_DECLARE_METATYPE(ExportTableData)
 Q_DECLARE_METATYPE(QList<ExportTableData>)
+Q_DECLARE_METATYPE(FeishuExportRequest)
 

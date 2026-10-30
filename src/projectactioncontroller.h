@@ -19,6 +19,7 @@ public Q_SLOTS:
     bool handleSaveProject();
     bool handleSaveAsProject();
     void handleExportScheduleExcel();
+    void handleExportFeishuScheduleExcel();
     void handleImportMembersData();
     void handleExportMembersExcel();
     void handleExportMembersData();
@@ -28,6 +29,7 @@ Q_SIGNALS:
     void projectLoadedSuccessfully(const QString& filePath);
     void projectSavedSuccessfully(const QString& filePath);
     void requestExportExcel(const QString& filePath, const QList<ExportTableData>& tablesData);
+    void requestExportFeishuExcel(const FeishuExportRequest& request);
     void ImportMembersDataSuccessfully();
 
 private:

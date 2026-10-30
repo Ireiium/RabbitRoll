@@ -126,7 +126,7 @@ AboutPage::AboutPage(QWidget* parent)
     credit->addWidget(wit);
 
     ElaScrollPageArea* area4 = new ElaScrollPageArea(container);
-    area4->setFixedHeight(130);
+    area4->setFixedHeight(165);
     QVBoxLayout* info = new QVBoxLayout(area4);
     
     info->addWidget(new ElaText("<b>开发者信息</b>", 20));
@@ -144,6 +144,20 @@ AboutPage::AboutPage(QWidget* parent)
     myinfo->addWidget(t8);
     myinfo->addStretch();
     info->addLayout(myinfo);
+
+    QHBoxLayout* repositoryInfo = new QHBoxLayout();
+    ElaText* repositoryTitle = new ElaText("项目代码仓库：", 18);
+    repositoryTitle->setIsWrapAnywhere(false);
+    repositoryTitle->setWordWrap(false);
+    repositoryInfo->addWidget(repositoryTitle);
+    ElaText* repositoryLink = new ElaText("<a href='https://github.com/Ireiium/RabbitRoll' style='color:#0078d4; text-decoration:none;'>https://github.com/Ireiium/RabbitRoll</a>", 18);
+    repositoryLink->setOpenExternalLinks(true);
+    repositoryLink->setIsWrapAnywhere(false);
+    repositoryLink->setWordWrap(false);
+    repositoryLink->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+    repositoryInfo->addWidget(repositoryLink);
+    repositoryInfo->addStretch();
+    info->addLayout(repositoryInfo);
     info->addStretch();
 
     mainLayout->addWidget(area1);

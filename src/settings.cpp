@@ -1,5 +1,6 @@
 #include "settings.h"
 #include "lock.h"
+#include "exceltemplates.h"
 
 Settings* Settings::instance()
 {
@@ -73,6 +74,13 @@ bool Settings::getEnableConsole() const {
 }
 void Settings::setEnableConsole(bool enable) { 
     m_settings->setValue("EnableConsole", enable);
+}
+
+QString Settings::getExcelTemplate() const {
+    return m_settings->value("ExcelTemplate", ExcelTemplates::defaultFileName()).toString();
+}
+void Settings::setExcelTemplate(const QString& fileName) {
+    m_settings->setValue("ExcelTemplate", fileName);
 }
 
 //UI和窗口设置

@@ -9,11 +9,16 @@
 #include <QEventLoop>
 #include <QWidget>
 #include <QProgressBar>
+#include <QFileInfo>
+#include "feishuexportdialog.h"
 
 ProjectActionController::ProjectActionController(QWidget* parentUI)
     : QObject(parentUI), _parentUI(parentUI)
 {
     connect(this, &ProjectActionController::requestExportExcel, BackendWorker::instance(), &BackendWorker::exportExcel);
+    qRegisterMetaType<FeishuExportRequest>("FeishuExportRequest");
+    connect(this, &ProjectActionController::requestExportFeishuExcel,
+            BackendWorker::instance(), &BackendWorker::exportFeishuExcel);
 }
 
 void ProjectActionController::handleOpenProject() {
@@ -187,6 +192,88 @@ void ProjectActionController::handleExportScheduleExcel() {
 
     if (exportOk) QMessageBox::information(_parentUI, "导出成功", "排班表已成功导出！");
     else QMessageBox::critical(_parentUI, "导出失败", errMsg);
+}
+
+void ProjectActionController::handleExportFeishuScheduleExcel() {
+    auto* components = ComponentManager::instance();
+    auto* editorComponent = components->getComponent<EditorDutyComponent>();
+    auto* memberComponent = components->getComponent<MemberInfoComponent>();
+    if (!editorComponent || !memberComponent) return;
+    auto* editor = editorComponent->getModel();
+    auto* members = memberComponent->getModel();
+
+    QList<FeishuDutySlot> duties;
+    QDate firstDate;
+    const QStringList weekdays{"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+    for (int row = 0; row < editor->rowCount(); ++row) {
+        for (int column = 0; column < editor->columnCount(); ++column) {
+            const auto ids = editor->getSelectedIds(row, column);
+            for (const auto& id : ids) {
+                const auto* member = members->getMemberDataPtr(members->getRowById(id));
+                if (!member) {
+                    QMessageBox::warning(_parentUI, "无法导出", "排班表含有已删除的成员，请先修正排班。");
+                    return;
+                }
+                FeishuDutySlot duty;
+                duty.memberId = id;
+                duty.name = member->properties.value("姓名").toString();
+                duty.timeRange = editor->getTimesRow()->at(row);
+                if (editor->getColumnMode() == EditorDutyModel::DateMode) {
+                    duty.date = QDate::fromString(editor->getFullDateString(column), Qt::ISODate);
+                    if (!duty.date.isValid()) {
+                        QMessageBox::warning(_parentUI, "无法导出", "排班表中存在无效日期。");
+                        return;
+                    }
+                    if (!firstDate.isValid() || duty.date < firstDate) firstDate = duty.date;
+                } else {
+                    duty.dayOfWeek = weekdays.indexOf(editor->getWeekColumns().value(column)) + 1;
+                    if (duty.dayOfWeek == 0) {
+                        QMessageBox::warning(_parentUI, "无法导出", "排班表中存在无法识别的星期列。");
+                        return;
+                    }
+                }
+                duties.append(duty);
+            }
+        }
+    }
+    if (duties.isEmpty()) {
+        QMessageBox::warning(_parentUI, "提示", "当前模式的排班表中尚未选择值班人员。");
+        return;
+    }
+
+    auto* settings = ProjectSetting::instance();
+    const auto month = firstDate.isValid() ? firstDate
+        : (settings->_enableSerchDateRange && settings->_searchStartDate.isValid()
+           ? settings->_searchStartDate : QDate::currentDate());
+    const auto defaultName = (settings->_projectName.isEmpty() ? "未命名项目" : settings->_projectName)
+        + QString("_飞书排班_%1.xlsx").arg(month.toString("yyyy-MM"));
+    QString outputPath = QFileDialog::getSaveFileName(_parentUI, "导出飞书排班表", defaultName,
+                                                    "Excel 工作簿 (*.xlsx)");
+    if (outputPath.isEmpty()) return;
+    if (QFileInfo(outputPath).suffix().isEmpty()) outputPath += ".xlsx";
+    FeishuExportDialog options(outputPath, duties, month, _parentUI);
+    if (options.exec() != QDialog::Accepted) return;
+    auto request = options.exportRequest();
+
+    QProgressDialog progress("正在回填飞书排班模板...", {}, 0, 0, _parentUI);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setCancelButton(nullptr);
+    progress.show();
+    QEventLoop loop;
+    bool success = false;
+    QString message;
+    const auto connection = connect(BackendWorker::instance(), &BackendWorker::feishuExportFinished,
+        &loop, [&](bool ok, const QString& text) {
+            success = ok;
+            message = text;
+            loop.quit();
+        });
+    Q_EMIT requestExportFeishuExcel(request);
+    loop.exec();
+    disconnect(connection);
+    progress.close();
+    if (success) QMessageBox::information(_parentUI, "导出成功", message);
+    else QMessageBox::critical(_parentUI, "导出失败", message);
 }
 
 void ProjectActionController::handleExportMembersExcel() {

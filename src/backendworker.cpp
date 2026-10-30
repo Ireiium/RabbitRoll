@@ -223,6 +223,12 @@ void BackendWorker::exportExcel(const QString& filePath, const QList<ExportTable
     Q_EMIT excelExportFinished(ok, ok ? "" : "保存失败，请检查文件是否被占用。");
 }
 
+void BackendWorker::exportFeishuExcel(const FeishuExportRequest& request) {
+    QString message;
+    const bool success = FeishuScheduleExporter::exportFile(request, message);
+    Q_EMIT feishuExportFinished(success, message);
+}
+
 //放弃了直接在程序黎明直接写所有需要的逻辑，转而嵌个AI或者脚本读取引擎。
 void BackendWorker::autoSchedule(const QHash<QString, QStringList>& available, int targetPerCell, bool enablePrioritize, bool isMultipate, int mode) {
     _abort.store(false);

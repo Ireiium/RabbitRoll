@@ -87,6 +87,14 @@ qt_add_executable(RabbitRoll
     projectworker.cpp
     backendworker.h
     backendworker.cpp
+    feishuscheduleexporter.h
+    feishuscheduleexporter.cpp
+    feishuexportdialog.h
+    feishuexportdialog.cpp
+    exceltemplates.h
+    exceltemplates.cpp
+    exceltemplatepicker.h
+    exceltemplatepicker.cpp
     RecentFileButton.h
     RecentFileButton.cpp
     projectactioncontroller.h
@@ -157,6 +165,8 @@ add_custom_command(TARGET RabbitRoll POST_BUILD
         "${PROJECT_SOURCE_DIR}/pythonembed/Windows/python312.dll" "$<TARGET_FILE_DIR:RabbitRoll>"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
         "${PROJECT_SOURCE_DIR}/licenses" "$<TARGET_FILE_DIR:RabbitRoll>/licenses"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${PROJECT_SOURCE_DIR}/LICENSE" "$<TARGET_FILE_DIR:RabbitRoll>/licenses/LICENSE_RabbitRoll_MIT.txt"
     COMMENT "RabbitRoll: deploying libraries, Python and licenses"
     VERBATIM
 )
@@ -171,6 +181,16 @@ add_custom_target(RabbitRollExampleScripts
     VERBATIM
 )
 add_dependencies(RabbitRoll RabbitRollExampleScripts)
+
+add_custom_target(RabbitRollExcelTemplates
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/Excel template"
+        "-DDESTINATION_DIR=$<TARGET_FILE_DIR:RabbitRoll>/Excel template"
+        -P "${PROJECT_SOURCE_DIR}/cmake/CopyExcelTemplates.cmake"
+    COMMENT "RabbitRoll: deploying Excel templates"
+    VERBATIM
+)
+add_dependencies(RabbitRoll RabbitRollExcelTemplates)
 
 option(RABBITROLL_DEPLOY_QT_AFTER_BUILD "Deploy Qt runtime next to the built executable" ON)
 if(RABBITROLL_DEPLOY_QT_AFTER_BUILD)

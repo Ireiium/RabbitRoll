@@ -25,6 +25,8 @@ public:
     void setDefaultScript(const QString& scriptName);
     bool getEnableConsole() const;
     void setEnableConsole(bool enable);
+    QString getExcelTemplate() const;
+    void setExcelTemplate(const QString& fileName);
 
     int getThemeMode() const;
     void setThemeMode(int mode);

@@ -11,6 +11,10 @@ endif()
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build configuration" FORCE)
 endif()
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/build/package"
+        CACHE PATH "RabbitRoll package directory" FORCE)
+endif()
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
 
 find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Core Widgets Concurrent Network)
@@ -35,38 +39,46 @@ find_package(ElaWidgetTools CONFIG REQUIRED
 )
 add_subdirectory(src)
 
-include(GNUInstallDirs)
+# Use the usual Windows portable layout, with the executable and DLLs together.
 install(TARGETS RabbitRoll
     BUNDLE DESTINATION .
-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION .
+    LIBRARY DESTINATION .
 )
 install(FILES "$<TARGET_FILE:ElaWidgetTools>"
     "${CMAKE_CURRENT_SOURCE_DIR}/pythonembed/Windows/python312.dll"
-    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    DESTINATION .
 )
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/pythonembed/Windows/"
-    DESTINATION "${CMAKE_INSTALL_BINDIR}/pythonembed"
+    DESTINATION pythonembed
 )
 # Installing an update must preserve user-edited scripts as well as a normal build.
 install(CODE "
     set(SOURCE_DIR [[${CMAKE_CURRENT_SOURCE_DIR}/scripts]])
-    if(IS_ABSOLUTE [[${CMAKE_INSTALL_BINDIR}]])
-        set(DESTINATION_DIR \"\$ENV{DESTDIR}${CMAKE_INSTALL_BINDIR}/scripts\")
-    else()
-        set(DESTINATION_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/scripts\")
-    endif()
+    set(DESTINATION_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/scripts\")
     include([[${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyExampleScripts.cmake]])
 ")
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/licenses/"
-    DESTINATION "${CMAKE_INSTALL_BINDIR}/licenses"
+    DESTINATION licenses
 )
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    DESTINATION licenses
+    RENAME "LICENSE_RabbitRoll_MIT.txt"
+)
+install(CODE "
+    set(SOURCE_DIR [[${CMAKE_CURRENT_SOURCE_DIR}/Excel template]])
+    set(DESTINATION_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Excel template\")
+    include([[${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyExcelTemplates.cmake]])
+")
 
 # Quote the executable path so Qt deployment also works in directories with spaces.
 qt_generate_deploy_script(
     TARGET RabbitRoll
     OUTPUT_SCRIPT deploy_script
     CONTENT [[
+set(QT_DEPLOY_BIN_DIR ".")
+set(QT_DEPLOY_LIB_DIR ".")
+set(QT_DEPLOY_PLUGINS_DIR ".")
 qt_deploy_runtime_dependencies(
     EXECUTABLE "$<TARGET_FILE:RabbitRoll>"
     GENERATE_QT_CONF

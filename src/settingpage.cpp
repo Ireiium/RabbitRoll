@@ -20,6 +20,7 @@
 #include "ElaPushButton.h"
 #include "scriptengine.h"
 #include "settings.h"
+#include "exceltemplatepicker.h"
 
 SettingPage::SettingPage(bool hasAI, QWidget* parent)
     : ElaScrollPage(parent)
@@ -194,6 +195,9 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
     Q_EMIT enableAIChanged(_enableAISwitch->getIsToggled());
 
 #endif
+    mainLayout->addWidget(new ElaText("导出设置", 20));
+    auto* templatePicker = new ExcelTemplatePicker(container);
+    mainLayout->addWidget(templatePicker);
     mainLayout->addWidget(new ElaText(" 主题设置", 20));
     ElaScrollPageArea* themeArea = new ElaScrollPageArea(container);
     mainLayout->addWidget(themeArea);
@@ -430,6 +434,7 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
 
     connect(recoverBtn, &ElaPushButton::clicked, this, [=]() {
         Settings::instance()->clearAllSettings();
+        templatePicker->reloadTemplates();
 
         if (themeGroup->button(0)) {
             themeGroup->button(0)->setChecked(true);
