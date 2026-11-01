@@ -1,10 +1,18 @@
 # RabbitRoll兔子排班
 
+<p align="center">
+  <a href="https://hub.xerj.org/contributors/Ireiium">
+    <img src="https://hub.xerj.org/contributors/Ireiium/badge.svg" alt="XERJ Corpus Hub contributor">
+  </a>
+</p>
+
 RabbitRoll兔子排班是一款专注于解决团队排班问题的软件，尤其适用于大学生团队管理。它能够高效处理诸如高校学生组织/团队成员值班安排等繁琐事务，显著减少工作量。
 
 程序支持平台：Windows。
 
-![](readme/screenshot.png)
+<p align="center">
+  <img src="readme/screenshot.png" alt="RabbitRoll Screenshot" width="800">
+</p>
 
 ## 构建说明
 
