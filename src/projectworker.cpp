@@ -1,9 +1,16 @@
 #include "projectworker.h"
+#include "rschfile.h"
 #include <QFile>
 #include <QSaveFile>
 #include <QJsonDocument>
 
 ProjectWorker::ProjectWorker(QObject* parent) : QObject(parent) {}
+
+void ProjectWorker::doSaveSchedule(const QString& filePath, const QJsonObject& root) {
+    const auto result = RschFile::write(filePath, QJsonDocument(root).toJson());
+    if (result) Q_EMIT saveDone();
+    else Q_EMIT error(result.message);
+}
 
 void ProjectWorker::doLoad(const QString& filePath) {
     QFile file(filePath);

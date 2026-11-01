@@ -1,4 +1,6 @@
 #include "memberinformationdock.h"
+#include "rschfile.h"
+#include <QSharedPointer>
 #include "ElaLineEdit.h"
 #include "ElaScrollArea.h"
 #include <QLabel>
@@ -275,27 +277,12 @@ void MemberInformationDock::importSchedule() {
     QString filePath = QFileDialog::getOpenFileName(this, "导入课表", "", "RabbitRoll Schedule (*.rsch);");
     if (filePath.isEmpty()) return;
 
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, "导入失败", "无法读取课表文件。");
+    const auto decoded = RschFile::read(filePath);
+    if (!decoded) {
+        QMessageBox::warning(this, "导入失败", decoded.message);
         return;
     }
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
-    QJsonObject root = document.object();
-    file.close();
-
-    QString dataType = root["dataType"].toString();
-    if (parseError.error != QJsonParseError::NoError || !document.isObject()
-        || root["app"].toString() != "rabbitroll"
-        || (dataType != "course_schedule" && dataType != "schedule")) {
-        QMessageBox::warning(this, "导入失败", "该文件不是有效的 RabbitRoll 时间表。");
-        return;
-    }
-    if (dataType == "course_schedule" && root["school"].toString() != "jwxt.wit.edu.cn") {
-        QMessageBox::warning(this, "导入失败", "当前仅支持导入 jwxt.wit.edu.cn 的课程表。");
-        return;
-    }
+    const QString dataType = decoded.root["dataType"].toString();
     QDate startDate = QDate::currentDate();
     int overwritePolicy = -1;
     if (dataType == "course_schedule") {
@@ -350,11 +337,19 @@ void MemberInformationDock::importSchedule() {
     _importBtn->setEnabled(false);
 
     auto* pm = ProjectManager::instance();
+    const auto importError = QSharedPointer<QString>::create();
+    const auto errorConnection = connect(pm, &ProjectManager::operationError, this,
+        [importError](const QString& message) { *importError = message; });
 
     connect(pm, &ProjectManager::scheduleImportFinished, this, [=](bool ok, const QJsonObject& res) {
+        disconnect(errorConnection);
         progress->close();
         progress->deleteLater();
         _importBtn->setEnabled(true);
+        if (!ok) {
+            QMessageBox::warning(this, "导入失败", importError->isEmpty() ? "课表导入失败，当前数据未更改。" : *importError);
+            return;
+        }
 
         QWidget* parent = this->window() ? this->window() : this;
         const auto* targetData = importTarget.isValid()

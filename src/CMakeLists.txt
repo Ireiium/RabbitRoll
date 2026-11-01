@@ -85,6 +85,8 @@ qt_add_executable(RabbitRoll
     dialogbatchadd.cpp
     projectworker.h
     projectworker.cpp
+    rschfile.h
+    rschfile.cpp
     backendworker.h
     backendworker.cpp
     feishuscheduleexporter.h
@@ -145,6 +147,7 @@ endif()
 
 
 target_link_libraries(RabbitRoll PRIVATE
+    Bcrypt
     Qt::Core
     Qt::Widgets
     Qt::Concurrent

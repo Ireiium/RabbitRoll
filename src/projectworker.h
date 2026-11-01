@@ -17,4 +17,5 @@ Q_SIGNALS:
 public Q_SLOTS:
     void doLoad(const QString& filePath);
     void doSave(const QString& filePath, const QJsonObject& root);
+    void doSaveSchedule(const QString& filePath, const QJsonObject& root);
 };

@@ -1,4 +1,5 @@
 #include "projectmanager.h"
+#include "rschfile.h"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonDocument>
@@ -567,20 +568,16 @@ bool ProjectManager::isDirty() const {
 }
 
 void ProjectManager::importScheduleFromFile(const QString& filePath, const QDate& startDate) {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        Q_EMIT operationError("无法打开课表文件，请检查权限。");
+    const auto decoded = RschFile::read(filePath);
+    if (!decoded) {
+        Q_EMIT operationError(decoded.message);
         Q_EMIT scheduleImportFinished(false, QJsonObject());
         return;
     }
-
-    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-    file.close();
-    QJsonObject root = doc.object();
-
-    QString dataType = root["dataType"].toString();
-    if (root["app"].toString() != "rabbitroll" || (dataType != "course_schedule" && dataType != "schedule")) {
-        Q_EMIT operationError("该文件不是有效的时间表格式。");
+    const auto root = decoded.root;
+    if (root["dataType"].toString() == "course_schedule"
+        && (!startDate.isValid() || startDate.dayOfWeek() != 1)) {
+        Q_EMIT operationError("学期起点必须选择第一周的周一，当前数据未更改。");
         Q_EMIT scheduleImportFinished(false, QJsonObject());
         return;
     }
@@ -614,7 +611,7 @@ void ProjectManager::exportScheduleAs(const QString& filePath, const QJsonObject
     connect(worker, &ProjectWorker::error, thread, &QThread::quit, Qt::DirectConnection);
 
     connect(thread, &QThread::started, worker, [=]() {
-        worker->doSave(filePath, root);
+        worker->doSaveSchedule(filePath, root);
         });
     connect(worker, &ProjectWorker::saveDone, this, [this]() {
         Q_EMIT scheduleExportFinished(true);
