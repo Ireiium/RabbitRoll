@@ -15,6 +15,7 @@
 #include "ElaComboBox.h"
 #include "ElaPushButton.h"
 #include "ElaSpinBox.h"
+#include "ElaMessageBar.h"
 #include "exceltemplates.h"
 
 FeishuExportDialog::FeishuExportDialog(const QString& outputPath,
@@ -24,7 +25,7 @@ FeishuExportDialog::FeishuExportDialog(const QString& outputPath,
     setWindowTitle("导出飞书排班表");
     auto* layout = new QVBoxLayout;
     auto* hint = new QLabel("保存位置已确定。使用“设置 → 导出设置”中选择的 Excel 模板。\n"
-                           "按姓名匹配原有成员，保留模板的 UID、表头、说明和班次选项。", this);
+                           "按姓名匹配成员，自动忽略末尾括号备注；仅在唯一对应时导出，保留模板 UID 和原有内容。", this);
     hint->setWordWrap(true);
     layout->addWidget(hint);
 
@@ -66,6 +67,7 @@ FeishuExportDialog::FeishuExportDialog(const QString& outputPath,
     layout->addWidget(_readButton);
     _status = new QLabel(this);
     _status->setObjectName("feishuTemplateStatus");
+    _status->setTextFormat(Qt::PlainText);
     _status->setWordWrap(true);
     layout->addWidget(_status);
     _mapping = new QTableWidget(0, 2, this);
@@ -90,7 +92,13 @@ FeishuExportDialog::FeishuExportDialog(const QString& outputPath,
     layout->addLayout(buttons);
     setCentralLayout(layout, 780, 660);
 
-    connect(_readButton, &QPushButton::clicked, this, &FeishuExportDialog::loadTemplate);
+    connect(_readButton, &QPushButton::clicked, this, [this]() {
+        loadTemplate();
+        if (_previewValid)
+            ElaMessageBar::success(ElaMessageBarType::BottomLeft, "模板读取完成", _status->text(), 3000, this);
+        else
+            ElaMessageBar::error(ElaMessageBarType::BottomLeft, "无法预览模板", _status->text(), 6000, this);
+    });
     connect(_sheet, &QComboBox::currentTextChanged, this, &FeishuExportDialog::invalidatePreview);
     connect(_headerRow, &QSpinBox::valueChanged, this, &FeishuExportDialog::invalidatePreview);
     connect(_month, &QDateEdit::dateChanged, this, &FeishuExportDialog::invalidatePreview);

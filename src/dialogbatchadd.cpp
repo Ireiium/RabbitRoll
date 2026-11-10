@@ -41,6 +41,9 @@ DialogBatchAdd::DialogBatchAdd(QWidget* parent, WinDialog* dlg)
     btnLayout->addWidget(setBtn);
     ElaPushButton* importBtn = new ElaPushButton("从文件导入", this);
     btnLayout->addWidget(importBtn);
+    ElaPushButton* rschBtn = new ElaPushButton("通过RSCH导入", this);
+    rschBtn->setObjectName("batchAddImportRsch");
+    btnLayout->addWidget(rschBtn);
     btnLayout->addStretch();
 
     //index1
@@ -72,6 +75,7 @@ DialogBatchAdd::DialogBatchAdd(QWidget* parent, WinDialog* dlg)
         });
 
     connect(importBtn, &ElaPushButton::clicked, this, &DialogBatchAdd::importFromFileRequested);
+    connect(rschBtn, &ElaPushButton::clicked, this, &DialogBatchAdd::importRschRequested);
     connect(setBtn, &ElaPushButton::clicked, this, [=]() {
         DialogAction formatDialog(this);
         formatDialog.setWindowTitle("设置解析格式");

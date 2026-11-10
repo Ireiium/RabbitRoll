@@ -13,6 +13,7 @@ friend class WinDialog;
 
 Q_SIGNALS:
 	void importFromFileRequested();
+    void importRschRequested();
 	void batchAddWithFormatRequested(const QStringList& lines, const QStringList& format);
 
 public:

@@ -10,6 +10,24 @@
 #include "undocommands.h"
 #include <QTimer>
 
+namespace {
+class ImportMemberScheduleCommand : public QUndoCommand {
+public:
+    ImportMemberScheduleCommand(MemberInfoController* controller,
+        const MemberInfoModel::MemberData& before, const MemberInfoModel::MemberData& after)
+        : _controller(controller), _before(before), _after(after) {
+        for (auto p = after.properties.cbegin(); p != after.properties.cend(); ++p)
+            if (before.properties.value(p.key()) != p.value()) _properties.append(p.key());
+    }
+    void undo() override { _controller->restoreImportedMember(_before, _properties); }
+    void redo() override { _controller->restoreImportedMember(_after, _properties); }
+private:
+    MemberInfoController* _controller;
+    MemberInfoModel::MemberData _before, _after;
+    QStringList _properties;
+};
+}
+
 //开发过程中更换过一次架构，导致存在一些数据访问仍然是直接访问Model的情况。
 //怕改了有BUG，暂时没动。
 
@@ -17,6 +35,16 @@ MemberInfoController::MemberInfoController(MemberInfoModel* model, MemberInfoVie
     : QObject(parent), _model(model), _view(view)
 {
     _undoStack = new QUndoStack(this);
+    auto changed = [this]() {
+        ++_importRevision;
+        _isDateCacheDirty = true;
+        Q_EMIT membersChanged();
+    };
+    connect(_model, &QAbstractItemModel::dataChanged, this, changed);
+    connect(_model, &QAbstractItemModel::rowsInserted, this, changed);
+    connect(_model, &QAbstractItemModel::rowsRemoved, this, changed);
+    connect(_model, &QAbstractItemModel::modelReset, this, changed);
+    connect(_model, &MemberInfoModel::propertyListChanged, this, changed);
     connect(_view, &MemberInfoView::memberSelected, this, [=](const QVariantMap& details, int row) {
         Q_EMIT memberSelected(details, row);
         });
@@ -390,8 +418,12 @@ void MemberInfoController::restoreMembersDirectly(const QList<QVariantMap>& remo
     for (const auto& map : ascData) { dataToInsert.append({ map["row"].toInt(), map["data"].value<MemberInfoModel::MemberData>() }); }
     _model->insertMembersAt(dataToInsert);
 }
-void MemberInfoController::addPropertyDirectly(const QString& propName) { 
+void MemberInfoController::addPropertyDirectly(const QString& propName, bool visible) {
     _model->addNewProperty(propName); 
+    if (visible) {
+        _model->setPropertyVisible(propName, true);
+        Q_EMIT _model->propertyListChanged();
+    }
 }
 void MemberInfoController::removePropertyDirectly(const QString& propName) { 
     _model->removeProperty(propName); 
@@ -406,4 +438,66 @@ void MemberInfoController::setEnableScheduling(int row, bool enable) {
 
 void MemberInfoController::setScheduleFileSource(int row, const QString& source) {
     _model->setScheduleFileSource(row, source);
+}
+
+QList<MemberInfoModel::MemberData> MemberInfoController::importSnapshot() const {
+    return _model->_members;
+}
+
+bool MemberInfoController::applyRschImport(const QList<RschImport::Row>& rows, quint64 revision, QString& error) {
+    error.clear();
+    if (revision != _importRevision) {
+        error = "成员或项目已发生变化，请重新检查预览后导入。";
+        return false;
+    }
+    QList<RschImport::Row> selected;
+    QSet<QUuid> ids;
+    for (const auto& row : rows) {
+        if (!row.selected) continue;
+        if (!row.error.isEmpty() || row.result.id.isNull() || ids.contains(row.result.id)
+            || (row.create && _model->getRowById(row.result.id) >= 0)
+            || (!row.create && _model->getRowById(row.targetId) < 0)) {
+            error = "预览中仍有未解决的问题，请核对对应成员和重复文件。";
+            return false;
+        }
+        ids.insert(row.result.id);
+        selected.append(row);
+    }
+    if (selected.isEmpty()) { error = "请至少勾选一个可导入的文件。"; return false; }
+    _undoStack->beginMacro(QString("通过 RSCH 批量导入 %1 位成员的时间表").arg(selected.size()));
+    for (const auto& row : selected)
+        for (auto p = row.properties.cbegin(); p != row.properties.cend(); ++p)
+            if (!_model->getProperties().contains(p.key()))
+                _undoStack->push(new MemberAddPropertyCommand(this, p.key(), nullptr, true));
+    QList<QVariantMap> additions;
+    for (const auto& row : selected) {
+        if (row.create) {
+            auto data = row.result;
+            for (const auto& property : _model->getProperties())
+                if (!data.properties.contains(property)) data.properties[property] = "";
+            QVariantMap item;
+            item["row"] = _model->rowCount() + additions.size();
+            item["data"] = QVariant::fromValue(data);
+            additions.append(item);
+        } else {
+            const auto* before = _model->getMemberDataPtr(_model->getRowById(row.targetId));
+            _undoStack->push(new ImportMemberScheduleCommand(this, *before, row.result));
+        }
+    }
+    if (!additions.isEmpty()) _undoStack->push(new MemberAddCommand(this, _model->rowCount(), additions));
+    _undoStack->endMacro();
+    return true;
+}
+
+void MemberInfoController::restoreImportedMember(const MemberInfoModel::MemberData& data, const QStringList& properties) {
+    const int row = _model->getRowById(data.id);
+    if (row < 0) return;
+    auto* target = _model->getMemberDataPtr(row);
+    for (const auto& key : properties) target->properties[key] = data.properties.value(key, QString{});
+    target->scheduleDates = data.scheduleDates;
+    target->scheduleTimes = data.scheduleTimes;
+    target->scheduleMap = data.scheduleMap;
+    target->scheduleFileSource = data.scheduleFileSource;
+    Q_EMIT _model->dataChanged(_model->index(row, 0), _model->index(row, _model->columnCount() - 1));
+    if (getCurrentRow() == row) Q_EMIT requestUpdateSchedule(target);
 }

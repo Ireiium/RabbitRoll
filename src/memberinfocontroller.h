@@ -5,6 +5,7 @@
 #include <QUuid>
 #include "idlematchservice.h"
 #include <QUndoStack>
+#include "rschimport.h"
 
 class MemberInfoModel;
 class MemberInfoView;
@@ -20,6 +21,7 @@ Q_SIGNALS:
     void propertyListChanged();
     void batchWorkFinished();
     void searchDataReady(const QStringList& names, const QList<QVariantMap>& dataList);
+    void membersChanged();
 
 private Q_SLOTS:
     void onBatchMembersWithFormatProcessed(const QList<QVariantMap>& membersData, const QStringList& format);
@@ -92,12 +94,17 @@ public:
     void removeMembersDirectly(int startIndex, int count);
     void deleteMembersDirectly(const QList<QVariantMap>& removedData);
     void restoreMembersDirectly(const QList<QVariantMap>& removedData);
-    void addPropertyDirectly(const QString& propName);
+    void addPropertyDirectly(const QString& propName, bool visible = false);
     void removePropertyDirectly(const QString& propName);
     void restorePropertyDirectly(const QString& propName, bool wasVisible, const QMap<QUuid, QString>& cachedData);
 
     void setEnableScheduling(int row, bool enable);
     void setScheduleFileSource(int row, const QString& source);
+
+    QList<MemberInfoModel::MemberData> importSnapshot() const;
+    quint64 importRevision() const { return _importRevision; }
+    bool applyRschImport(const QList<RschImport::Row>& rows, quint64 revision, QString& error);
+    void restoreImportedMember(const MemberInfoModel::MemberData& data, const QStringList& properties);
 
 
 private:
@@ -108,6 +115,7 @@ private:
     mutable bool _isDateCacheDirty{ true };
     QUndoStack* _undoStack{ nullptr };
     bool _searchUpdatePending{ false };
+    quint64 _importRevision{0};
 
 
 };

@@ -5,6 +5,7 @@
 #include "xlsxcellreference.h"
 #include "xlsxdocument.h"
 #include "xlsxworksheet.h"
+#include "xlsxworkbook.h"
 #include "xlsxzipreader_p.h"
 #include "xlsxzipwriter_p.h"
 
@@ -68,6 +69,13 @@ QString normalizedHeading(QString text) {
         if (!character.isSpace() && character != '*' && character != QChar(0xff0a)) heading += character;
     }
     return heading.toCaseFolded();
+}
+
+QString nameWithoutTrailingNotes(QString name) {
+    name = name.trimmed();
+    static const QRegularExpression notes("(?:\\s*(?:（[^（）()]*）|\\([^（）()]*\\)))+\\s*$");
+    name.remove(notes);
+    return name.trimmed();
 }
 
 QDate headerDate(const std::shared_ptr<QXlsx::Cell>& cell, const QDate& month) {
@@ -150,6 +158,59 @@ QMap<int, QString> rawIdentifiers(const QByteArray& xml, int column, QXlsx::Work
     return identifiers;
 }
 
+bool resolveWorksheet(QXlsx::Document& workbook, QXlsx::ZipReader& package,
+                      QString& sheetPath, QString& error) {
+    auto* worksheet = workbook.currentWorksheet();
+    const auto paths = package.filePaths();
+    sheetPath = worksheet->filePath();
+    if (sheetPath.startsWith('/')) sheetPath.remove(0, 1);
+    if (!paths.contains(sheetPath) && paths.contains("xl/" + sheetPath)) sheetPath.prepend("xl/");
+    if (paths.contains(sheetPath)) return true;
+
+    // QXlsx expects the literal prefix r:id; Feishu also uses relationships:id.
+    // Resolve by namespace without rewriting the original workbook or its metadata.
+    const auto workbookPath = workbook.workbook()->filePath();
+    const auto workbookFolder = QFileInfo(workbookPath).path();
+    QXmlStreamReader book(package.fileData(workbookPath));
+    QString relationshipId;
+    while (!book.atEnd()) {
+        book.readNext();
+        if (book.isStartElement() && book.name() == "sheet"
+            && book.attributes().value("name") == worksheet->sheetName()) {
+            relationshipId = book.attributes().value(
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id").toString();
+        }
+    }
+    if (book.hasError() || relationshipId.isEmpty()) {
+        error = "无法识别模板工作表的关联标识，请重新下载原始模板。";
+        return false;
+    }
+    const auto relationshipsPath = QDir(workbookFolder).filePath(
+        "_rels/" + QFileInfo(workbookPath).fileName() + ".rels");
+    QXmlStreamReader relationships(package.fileData(relationshipsPath));
+    QString target;
+    while (!relationships.atEnd()) {
+        relationships.readNext();
+        if (!relationships.isStartElement() || relationships.name() != "Relationship"
+            || relationships.attributes().value("Id") != relationshipId) continue;
+        const auto attributes = relationships.attributes();
+        if (attributes.value("Type") != "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+            || attributes.value("TargetMode").compare("External", Qt::CaseInsensitive) == 0) break;
+        target = attributes.value("Target").toString();
+    }
+    if (!target.isEmpty()) {
+        sheetPath = QDir::cleanPath(target.startsWith('/') ? target.mid(1)
+            : QDir(workbookFolder).filePath(target));
+    }
+    if (relationships.hasError() || target.isEmpty() || !paths.contains(sheetPath)
+        || !worksheet->loadFromXmlData(package.fileData(sheetPath))) {
+        error = "无法读取模板关联的排班工作表，请重新下载原始模板。";
+        return false;
+    }
+    worksheet->setFilePath(sheetPath);
+    return true;
+}
+
 bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>& duties,
              PreparedExport& prepared, QString& error) {
     error.clear();
@@ -175,12 +236,18 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
         return false;
     }
     auto* worksheet = workbook.currentWorksheet();
-    prepared.sheetPath = worksheet->filePath();
+    QBuffer original(&prepared.package);
+    original.open(QIODevice::ReadOnly);
+    QXlsx::ZipReader package(&original);
+    if (!resolveWorksheet(workbook, package, prepared.sheetPath, error)) return false;
     int uidColumn = 0;
-    const auto dimension = worksheet->dimension();
-    for (int column = 1; column <= dimension.lastColumn(); ++column) {
-        const auto cell = worksheet->cellAt(settings.headerRow, column);
-        if (!cell) continue;
+    int lastRow = 0, lastColumn = 0;
+    const auto cells = worksheet->getFullCells(&lastRow, &lastColumn);
+    // Some Feishu exports declare dimension="A1" despite containing a complete roster.
+    for (const auto& entry : cells) {
+        if (entry.row != settings.headerRow || !entry.cell) continue;
+        const int column = entry.col;
+        const auto& cell = entry.cell;
         const auto heading = normalizedHeading(cell->readValue().toString());
         if (heading == "uid") {
             if (uidColumn != 0) {
@@ -219,9 +286,6 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
         error = "模板缺少飞书 UID 唯一标识列，请重新下载原始排班模板，不能仅创建姓名和日期表头。";
         return false;
     }
-    QBuffer original(&prepared.package);
-    original.open(QIODevice::ReadOnly);
-    QXlsx::ZipReader package(&original);
     const auto paths = package.filePaths();
     if (prepared.sheetPath.startsWith('/')) prepared.sheetPath.remove(0, 1);
     if (!paths.contains(prepared.sheetPath) && paths.contains("xl/" + prepared.sheetPath))
@@ -233,12 +297,15 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
     const auto uids = rawIdentifiers(package.fileData(prepared.sheetPath), uidColumn, worksheet, error);
     if (!error.isEmpty()) return false;
     QMap<QString, QList<int>> memberRows;
-    int lastRow = 0, lastColumn = 0;
-    const auto cells = worksheet->getFullCells(&lastRow, &lastColumn);
+    QMap<QString, QList<int>> namesWithoutNotes;
     for (const auto& cell : cells) {
         if (cell.row <= settings.headerRow || cell.col != prepared.info.nameColumn || !cell.cell) continue;
         const auto name = cell.cell->readValue().toString().trimmed();
-        if (!name.isEmpty()) memberRows[name].append(cell.row);
+        if (!name.isEmpty()) {
+            memberRows[name].append(cell.row);
+            const auto plainName = nameWithoutTrailingNotes(name);
+            if (!plainName.isEmpty()) namesWithoutNotes[plainName].append(cell.row);
+        }
     }
     if (duties.isEmpty()) {
         error = "当前视图没有已排班的成员，无法生成飞书排班文件。";
@@ -252,6 +319,7 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
     QMap<QString, QUuid> nameIds;
     QMap<QUuid, QString> idNames;
     QMap<QString, QString> uidNames;
+    QMap<int, QUuid> rowMemberIds;
     QMap<int, QMap<QDate, QList<Interval>>> dailyIntervals;
     for (const auto& duty : duties) {
         if (settings.templateDatesOnly && duty.date.isValid() && !prepared.info.dateColumns.contains(duty.date)) {
@@ -270,12 +338,23 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
         }
         nameIds.insert(name, duty.memberId);
         idNames.insert(duty.memberId, name);
-        if (memberRows.value(name).size() != 1) {
-            error = memberRows.value(name).isEmpty()
-                ? "模板中找不到已排班成员，请使用包含该成员的原始飞书模板：" + name
-                : "模板中已排班成员存在重名，无法仅按姓名匹配：" + name;
+        auto matchingRows = memberRows.value(name);
+        if (matchingRows.isEmpty()) {
+            const auto plainName = nameWithoutTrailingNotes(name);
+            if (!plainName.isEmpty()) matchingRows = namesWithoutNotes.value(plainName);
+        }
+        if (matchingRows.size() != 1) {
+            error = matchingRows.isEmpty()
+                ? "模板中找不到已排班成员（已尝试忽略末尾括号备注），请检查姓名或使用包含该成员的飞书模板：" + name
+                : "模板中有多个对应姓名，忽略括号备注后仍无法唯一匹配，请核对人员姓名：" + name;
             return false;
         }
+        const int row = matchingRows.first();
+        if (rowMemberIds.contains(row) && rowMemberIds[row] != duty.memberId) {
+            error = "多个程序成员对应同一个飞书成员，无法安全导出，请核对姓名及括号备注：" + name;
+            return false;
+        }
+        rowMemberIds.insert(row, duty.memberId);
         Interval interval;
         if (!parseInterval(duty.timeRange, interval)) {
             error = "已排班记录的时间段无效（暂不支持跨夜班次）：" + duty.timeRange;
@@ -302,7 +381,6 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
                 return false;
             }
         }
-        const auto row = memberRows[name].first();
         const auto uid = uids.value(row);
         if (uid.isEmpty()) {
             error = "模板中已排班成员的 UID 缺失或不是固定值，请重新下载原始模板：" + name;
@@ -365,14 +443,29 @@ bool prepare(const FeishuTemplateSettings& settings, const QList<FeishuDutySlot>
     return true;
 }
 
+void copyXmlToken(QXmlStreamReader& reader, QXmlStreamWriter& writer) {
+    if (reader.isCharacters() && reader.text().contains('\r')) {
+        // Literal CR would be normalized to LF when Excel reads the rewritten XML.
+        const auto text = reader.text();
+        qsizetype start = 0;
+        for (qsizetype index = 0; index < text.size(); ++index) {
+            if (text[index] != '\r') continue;
+            writer.writeCharacters(text.mid(start, index - start).toString());
+            writer.writeEntityReference("#13");
+            start = index + 1;
+        }
+        writer.writeCharacters(text.mid(start).toString());
+    } else writer.writeCurrentToken(reader);
+}
+
 void copyElement(QXmlStreamReader& reader, QXmlStreamWriter& writer) {
-    writer.writeCurrentToken(reader);
+    copyXmlToken(reader, writer);
     int depth = 1;
     while (depth > 0 && !reader.atEnd()) {
         reader.readNext();
         if (reader.isStartElement()) ++depth;
         if (reader.isEndElement()) --depth;
-        writer.writeCurrentToken(reader);
+        copyXmlToken(reader, writer);
     }
 }
 
@@ -409,7 +502,7 @@ bool patchWorksheet(const QByteArray& source, const QMap<int, QMap<int, QString>
             inSheetData = reader.isStartElement();
         if (!inSheetData || !reader.isStartElement() || reader.name() != "row"
             || reader.namespaceUri() != worksheetNamespace) {
-            writer.writeCurrentToken(reader);
+            copyXmlToken(reader, writer);
             continue;
         }
         const QString xmlNamespace = reader.namespaceUri().toString();
@@ -427,18 +520,18 @@ bool patchWorksheet(const QByteArray& source, const QMap<int, QMap<int, QString>
         }
         completedRows.insert(row);
         auto remaining = changes[row];
-        writer.writeCurrentToken(reader);
+        copyXmlToken(reader, writer);
         int previousColumn = 0;
         while (!reader.atEnd()) {
             reader.readNext();
             if (reader.isEndElement()) {
                 for (auto it = remaining.cbegin(); it != remaining.cend(); ++it)
                     writeCell(writer, xmlNamespace, row, it.key(), it.value());
-                writer.writeCurrentToken(reader);
+                copyXmlToken(reader, writer);
                 break;
             }
             if (!reader.isStartElement()) {
-                writer.writeCurrentToken(reader);
+                copyXmlToken(reader, writer);
                 continue;
             }
             if (reader.name() != "c" || reader.namespaceUri() != xmlNamespace) {

@@ -128,12 +128,13 @@ private:
 
 class MemberAddPropertyCommand : public QUndoCommand {
 public:
-    MemberAddPropertyCommand(MemberInfoController* controller, const QString& propName, QUndoCommand* parent = nullptr);
+    MemberAddPropertyCommand(MemberInfoController* controller, const QString& propName, QUndoCommand* parent = nullptr, bool visible = false);
     void undo() override;
     void redo() override;
 private:
     MemberInfoController* _controller;
     QString _propName;
+    bool _visible;
 };
 
 class MemberRemovePropertyCommand : public QUndoCommand {

@@ -117,12 +117,12 @@ void MemberRemoveCommand::redo() {
     _controller->deleteMembersDirectly(_removedData); 
 }
 
-MemberAddPropertyCommand::MemberAddPropertyCommand(MemberInfoController* controller, const QString& propName, QUndoCommand* parent)
-    : QUndoCommand(parent), _controller(controller), _propName(propName) {
+MemberAddPropertyCommand::MemberAddPropertyCommand(MemberInfoController* controller, const QString& propName, QUndoCommand* parent, bool visible)
+    : QUndoCommand(parent), _controller(controller), _propName(propName), _visible(visible) {
     setText(QString("添加属性 '%1'").arg(propName));
 }
 void MemberAddPropertyCommand::undo() { _controller->removePropertyDirectly(_propName); }
-void MemberAddPropertyCommand::redo() { _controller->addPropertyDirectly(_propName); }
+void MemberAddPropertyCommand::redo() { _controller->addPropertyDirectly(_propName, _visible); }
 
 MemberRemovePropertyCommand::MemberRemovePropertyCommand(MemberInfoController* controller, const QString& propName,
     bool wasVisible, const QMap<QUuid, QString>& cachedData, QUndoCommand* parent)

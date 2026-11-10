@@ -13,6 +13,8 @@
 #include "componentmanager.h"
 #include "dialogblank.h"
 #include "dialogbatchadd.h"
+#include "batchrschimportdialog.h"
+#include <QTimer>
 #include "projectmanager.h"
 #include <QFileDialog>
 #include <QMessageBox>
@@ -53,6 +55,19 @@ WinDialog::WinDialog(QWidget *parent)
     this->addPageNode("", _blankPage, ElaIconType::Grid);
 	_batchAddPage = new DialogBatchAdd(this, this);
     this->addPageNode("", _batchAddPage, ElaIconType::Grid);
+
+    connect(_batchAddPage, &DialogBatchAdd::importRschRequested, this, [this]() {
+        closeDialog();
+        QTimer::singleShot(0, this, [this]() {
+            bool imported = false;
+            {
+                BatchRschImportDialog dialog(_mController, parentWidget());
+                imported = dialog.exec() == QDialog::Accepted;
+            }
+            if (imported)
+                ElaMessageBar::success(ElaMessageBarType::BottomLeft, "导入完成", "成员与时间表已更新，可通过撤销恢复", 3000, parentWidget());
+        });
+    });
 
     connect(_batchAddPage, &DialogBatchAdd::importFromFileRequested, this, [=]() {
 

@@ -4,6 +4,7 @@
 #include <QSettings>
 #include <QStringList>
 #include <QString>
+#include <QDate>
 
 class Settings : public QObject
 {
@@ -27,6 +28,10 @@ public:
     void setEnableConsole(bool enable);
     QString getExcelTemplate() const;
     void setExcelTemplate(const QString& fileName);
+    QString getRschImportFormat() const;
+    void setRschImportFormat(const QString& format);
+    QDate getRschSemesterStart() const;
+    void setRschSemesterStart(const QDate& date);
 
     int getThemeMode() const;
     void setThemeMode(int mode);

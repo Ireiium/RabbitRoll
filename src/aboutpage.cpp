@@ -27,7 +27,7 @@ AboutPage::AboutPage(QWidget* parent)
 
     QHBoxLayout* version = new QHBoxLayout();
     version->addWidget(new ElaText("<b>版本：</b>", 20));
-    version->addWidget(new ElaText("1.0.0", 18));
+    version->addWidget(new ElaText("v1.0.1", 18));
     version->addStretch();
     basis->addLayout(version);
 
@@ -126,7 +126,7 @@ AboutPage::AboutPage(QWidget* parent)
     credit->addWidget(wit);
 
     ElaScrollPageArea* area4 = new ElaScrollPageArea(container);
-    area4->setFixedHeight(165);
+    area4->setFixedHeight(205);
     QVBoxLayout* info = new QVBoxLayout(area4);
     
     info->addWidget(new ElaText("<b>开发者信息</b>", 20));
@@ -158,6 +158,20 @@ AboutPage::AboutPage(QWidget* parent)
     repositoryInfo->addWidget(repositoryLink);
     repositoryInfo->addStretch();
     info->addLayout(repositoryInfo);
+
+    QHBoxLayout* releasesInfo = new QHBoxLayout();
+    ElaText* releasesTitle = new ElaText("获取最新的程序版本：", 18);
+    releasesTitle->setIsWrapAnywhere(false);
+    releasesTitle->setWordWrap(false);
+    releasesInfo->addWidget(releasesTitle);
+    ElaText* releasesLink = new ElaText("<a href='https://github.com/Ireiium/RabbitRoll/releases' style='color:#0078d4; text-decoration:none;'>https://github.com/Ireiium/RabbitRoll/releases</a>", 18);
+    releasesLink->setOpenExternalLinks(true);
+    releasesLink->setIsWrapAnywhere(false);
+    releasesLink->setWordWrap(false);
+    releasesLink->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+    releasesInfo->addWidget(releasesLink);
+    releasesInfo->addStretch();
+    info->addLayout(releasesInfo);
     info->addStretch();
 
     mainLayout->addWidget(area1);

@@ -86,6 +86,20 @@ void Settings::setEnableConsole(bool enable) {
 QString Settings::getExcelTemplate() const {
     return m_settings->value("ExcelTemplate", ExcelTemplates::defaultFileName()).toString();
 }
+
+QString Settings::getRschImportFormat() const {
+    return m_settings->value("RschImportFormat", "姓名").toString();
+}
+void Settings::setRschImportFormat(const QString& format) {
+    m_settings->setValue("RschImportFormat", format);
+}
+QDate Settings::getRschSemesterStart() const {
+    const auto date = QDate::fromString(m_settings->value("RschSemesterStart").toString(), Qt::ISODate);
+    return date.dayOfWeek() == 1 ? date : QDate{};
+}
+void Settings::setRschSemesterStart(const QDate& date) {
+    if (date.isValid() && date.dayOfWeek() == 1) m_settings->setValue("RschSemesterStart", date.toString(Qt::ISODate));
+}
 void Settings::setExcelTemplate(const QString& fileName) {
     m_settings->setValue("ExcelTemplate", fileName);
 }

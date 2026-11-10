@@ -1,4 +1,5 @@
 #include "backendworker.h"
+#include "rschimport.h"
 #include <QJsonArray>
 #include <QJsonObject>
 #include "xlsxdocument.h"
@@ -60,109 +61,7 @@ void BackendWorker::batchMembersWithFormat(const QStringList& lines, const QStri
 }
 
 void BackendWorker::scheduleImport(const QJsonObject& json, QDate startDate) {
-    QJsonObject schedule;
-    const auto validTimeRange = [](const QString& value) {
-        const QStringList parts = value.split('-');
-        if (parts.size() != 2) return false;
-        const QTime start = QTime::fromString(parts[0], "HH:mm");
-        const QTime end = QTime::fromString(parts[1], "HH:mm");
-        return start.isValid() && end.isValid() && start < end;
-    };
-    QString dataType = json["dataType"].toString();
-    if (dataType == "course_schedule") {
-        QString school = json["school"].toString();
-        if (school == "jwxt.wit.edu.cn" && startDate.isValid() && startDate.dayOfWeek() == 1) {
-            struct TimeBlock {
-                QString timeStr;
-                QList<int> sections;
-            };
-            QList<TimeBlock> allBlocks;
-
-            for (const QJsonValue& val : json["timetable"].toArray()) {
-                QJsonObject obj = val.toObject();
-                QString secStr = obj["section"].toVariant().toString();
-                QString timeStr = QString("%1-%2").arg(
-                    obj["startTime"].toString(), obj["endTime"].toString());
-                if (!validTimeRange(timeStr)) continue;
-
-                QList<int> pList;
-                if (obj["sections"].isArray()) {
-                    for (const auto& section : obj["sections"].toArray()) {
-                        if (section.toInt() > 0 && section.toInt() <= 30) pList.append(section.toInt());
-                    }
-                }
-                else if (secStr.length() == 1) {
-                    pList << secStr.toInt();
-                }
-                else if (secStr.length() == 2 && secStr != "10" && secStr != "11") {
-                    pList << secStr.left(1).toInt() << secStr.right(1).toInt();
-                }
-                else if (secStr == "10" || secStr == "11") {
-                    pList << secStr.toInt();
-                }
-                else {
-                    for (int i = 0; i + 1 < secStr.length(); i += 2) {
-                        pList << secStr.mid(i, 2).toInt();
-                    }
-                }
-                allBlocks.append({ timeStr, pList });
-            }
-
-            for (const QJsonValue& val : json["courses"].toArray()) {
-                QJsonObject course = val.toObject();
-                QList<int> cList;
-                for (const QJsonValue& s : course["sections"].toArray()) {
-                    cList.append(s.toInt());
-                }
-
-                QStringList matchedTime;
-                for (const TimeBlock& block : allBlocks) {
-                    bool isIntersect = false;
-                    for (int cSec : cList) {
-                        if (block.sections.contains(cSec)) {
-                            isIntersect = true;
-                            break;
-                        }
-                    }
-                    if (isIntersect) {
-                        matchedTime.append(block.timeStr);
-                    }
-                }
-
-                if (matchedTime.isEmpty())
-                    continue;
-
-                int dayOfWeek = course["dayOfWeek"].toInt();
-                if (dayOfWeek < 1 || dayOfWeek > 7) continue;
-                for (const QJsonValue& w : course["weeks"].toArray()) {
-                    if (w.toInt() < 1 || w.toInt() > 64) continue;
-                    QString dateStr = startDate
-                        .addDays((w.toInt() - 1) * 7 + (dayOfWeek - 1))
-                        .toString(Qt::ISODate);
-                    QJsonObject dateObj = schedule[dateStr].toObject();
-
-                    for (const QString& timeStr : matchedTime) {
-                        dateObj[timeStr] = true;
-                    }
-                    schedule[dateStr] = dateObj;
-                }
-            }
-        }
-    }
-    else if (dataType == "schedule") {
-        QJsonObject scheduleData = json["scheduleData"].toObject();
-        for (auto it = scheduleData.begin(); it != scheduleData.end(); ++it) {
-            if (!QDate::fromString(it.key(), Qt::ISODate).isValid() || !it.value().isObject()) continue;
-            QJsonObject times;
-            const QJsonObject source = it.value().toObject();
-            for (auto time = source.begin(); time != source.end(); ++time) {
-                if (validTimeRange(time.key()) && time.value().isBool()) times[time.key()] = time.value();
-            }
-            if (!times.isEmpty()) schedule[it.key()] = times;
-        }
-    }
-
-    Q_EMIT scheduleImportFinished(schedule);
+    Q_EMIT scheduleImportFinished(RschImport::schedule(json, startDate));
 }
 
 void BackendWorker::exportExcel(const QString& filePath, const QList<ExportTableData>& tablesData) {

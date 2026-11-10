@@ -87,6 +87,10 @@ qt_add_executable(RabbitRoll
     projectworker.cpp
     rschfile.h
     rschfile.cpp
+    rschimport.h
+    rschimport.cpp
+    batchrschimportdialog.h
+    batchrschimportdialog.cpp
     backendworker.h
     backendworker.cpp
     feishuscheduleexporter.h
