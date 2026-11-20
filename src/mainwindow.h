@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include "ElaWindow.h"
 #include <QUndoGroup>
+#include <QStringList>
 
 class HomePage;
 class EditPage;
@@ -27,6 +28,8 @@ public:
     ~MainWindow();
 
     void removeRecentFile(const QString& filePath);
+    // 打开双击、命令行或拖入指定的项目文件；读取失败时提示，且不改变当前项目。
+    void openProjectFromFile(const QString& filePath);
 
 private:
     void initialModel();
@@ -38,6 +41,11 @@ private:
     void closeEvent(QCloseEvent* event) override;
     void setProjectWorkspaceEnabled(bool enabled);
     void setNavBar();
+    void processNextOpenRequest();
+    void openProjectFileNow(const QString& filePath);
+
+    QStringList _pendingOpenRequests;
+    bool _processingOpenRequests{ false };
 
 
     HomePage* _homePage{ nullptr };

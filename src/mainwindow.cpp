@@ -26,10 +26,71 @@
 #include "ElaNavigationBar.h"
 #include "settings.h"
 #include "ElaMessageBar.h"
+#include <QApplication>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
+#include <QDir>
 
 #ifdef ENABLE_AI_SUPPORT
 #include "AIServiceInterface.h"
 #endif
+
+namespace {
+// 取拖入内容中的第一个本地 .rroll 文件；没有时返回空字符串。
+QString rrollFileFromMimeData(const QMimeData* mimeData)
+{
+    if (!mimeData || !mimeData->hasUrls()) return QString();
+    for (const QUrl& url : mimeData->urls()) {
+        if (!url.isLocalFile()) continue;
+        const QString filePath = url.toLocalFile();
+        if (QFileInfo(filePath).suffix().compare(QStringLiteral("rroll"), Qt::CaseInsensitive) == 0) {
+            return filePath;
+        }
+    }
+    return QString();
+}
+
+// 窗口里有些子控件本身接受拖放（例如搜索框），这里统一拦截 .rroll 的拖放，
+// 保证文件拖到窗口任意位置都是打开项目，而不是把路径插入到输入框。
+class RrollDropFilter : public QObject
+{
+public:
+    explicit RrollDropFilter(MainWindow* window)
+        : QObject(window), _window(window) {}
+
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        const QEvent::Type type = event->type();
+        if (type != QEvent::DragEnter && type != QEvent::DragMove && type != QEvent::Drop) {
+            return false;
+        }
+        auto* widget = qobject_cast<QWidget*>(watched);
+        if (!widget || widget->window() != _window) return false;
+
+        if (type == QEvent::Drop) {
+            auto* dropEvent = static_cast<QDropEvent*>(event);
+            const QString filePath = rrollFileFromMimeData(dropEvent->mimeData());
+            if (filePath.isEmpty()) return false;
+            dropEvent->acceptProposedAction();
+            //拖放处理中不显示模态对话框，等拖放结束后的下一轮事件循环再读取
+            QTimer::singleShot(0, _window, [window = _window, filePath]() {
+                window->openProjectFromFile(filePath);
+                });
+            return true;
+        }
+
+        auto* dragEvent = static_cast<QDragMoveEvent*>(event);
+        if (rrollFileFromMimeData(dragEvent->mimeData()).isEmpty()) return false;
+        dragEvent->acceptProposedAction();
+        return true;
+    }
+
+private:
+    MainWindow* _window;
+};
+}
 
 MainWindow::MainWindow(bool hasAI, QWidget* parent)
     : ElaWindow(parent), _isAIEnabled(hasAI)
@@ -97,6 +158,8 @@ void MainWindow::initialWindow()
 {
     setWindowTitle("RabbitRoll");
     setWindowIcon(QIcon(":/res/icons/icon.png"));
+    setAcceptDrops(true);//允许把 .rroll 文件直接拖入窗口打开
+    qApp->installEventFilter(new RrollDropFilter(this));
 
     this->setNavigationBarDisplayMode(ElaNavigationType::Compact);
     this->setNavigationBarWidth(250);
@@ -371,6 +434,58 @@ void MainWindow::removeRecentFile(const QString& filePath) {
     if (_homePage) {
         _homePage->loadRecentFiles();
     }
+}
+
+void MainWindow::openProjectFromFile(const QString& filePath) {
+    if (filePath.isEmpty()) return;
+    // Resolve paths before queuing, and serialize requests across nested modal event loops.
+    _pendingOpenRequests.append(QFileInfo(filePath).absoluteFilePath());
+    if (_processingOpenRequests) return;
+    _processingOpenRequests = true;
+    QTimer::singleShot(0, this, &MainWindow::processNextOpenRequest);
+}
+
+void MainWindow::processNextOpenRequest() {
+    if (_pendingOpenRequests.isEmpty()) {
+        _processingOpenRequests = false;
+        return;
+    }
+    if (QApplication::activeModalWidget() || QApplication::activePopupWidget()) {
+        QTimer::singleShot(100, this, &MainWindow::processNextOpenRequest);
+        return;
+    }
+    openProjectFileNow(_pendingOpenRequests.takeFirst());
+    QTimer::singleShot(0, this, &MainWindow::processNextOpenRequest);
+}
+
+void MainWindow::openProjectFileNow(const QString& filePath) {
+    const QFileInfo fileInfo(filePath);
+    if (fileInfo.suffix().compare(QStringLiteral("rroll"), Qt::CaseInsensitive) != 0) {
+        QMessageBox::warning(this, "无法打开", "只能打开 RabbitRoll 项目文件（*.rroll）。");
+        return;
+    }
+    if (!fileInfo.isFile()) {
+        QMessageBox::warning(this, "无法打开",
+            QString("文件不存在或无法访问：\n%1").arg(QDir::toNativeSeparators(fileInfo.absoluteFilePath())));
+        return;
+    }
+
+    const QString absolutePath = fileInfo.absoluteFilePath();
+    const QString canonicalPath = fileInfo.canonicalFilePath();
+    const QString currentPath = ProjectManager::instance()->currentFilePath();
+    if (!currentPath.isEmpty()) {
+        const QFileInfo currentInfo(currentPath);
+        const QString currentCanonicalPath = currentInfo.canonicalFilePath();
+        if (currentInfo.isFile() && !currentCanonicalPath.isEmpty()
+            && currentCanonicalPath.compare(canonicalPath, Qt::CaseInsensitive) == 0) {
+            //同一个文件已经打开时，拖入或再次双击不重复读取，避免无意义的保存提示
+            return;
+        }
+    }
+
+    if (!maybeSave()) return;//项目已修改时先处理未保存内容
+
+    _actionController->handleOpenRecentProject(absolutePath);
 }
 
 void MainWindow::setNavBar() {

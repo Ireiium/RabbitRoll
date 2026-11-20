@@ -13,6 +13,10 @@ qt_add_executable(RabbitRoll
     MenuButton.h
     MenuButton.cpp
     main.cpp
+    fileassociation.h
+    fileassociation.cpp
+    singleinstance.h
+    singleinstance.cpp
     mainwindow.cpp
     mainwindow.h
     componentbase.h
@@ -137,7 +141,7 @@ if(ENABLE_AI)
         apikeystore.h
         apikeystore.cpp
     )
-    target_link_libraries(RabbitRoll PRIVATE Qt::Network Crypt32)
+    target_link_libraries(RabbitRoll PRIVATE Crypt32)
 endif()
 
 if(WIN32)
@@ -152,9 +156,13 @@ endif()
 
 target_link_libraries(RabbitRoll PRIVATE
     Bcrypt
+    Advapi32
+    Shell32
+    User32
     Qt::Core
     Qt::Widgets
     Qt::Concurrent
+    Qt::Network
     pybind11::embed
     Python3::Python
     ElaWidgetTools
