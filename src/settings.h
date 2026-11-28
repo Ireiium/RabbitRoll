@@ -26,8 +26,6 @@ public:
     void setDefaultScript(const QString& scriptName);
     bool getEnableConsole() const;
     void setEnableConsole(bool enable);
-    QString getExcelTemplate() const;
-    void setExcelTemplate(const QString& fileName);
     QString getRschImportFormat() const;
     void setRschImportFormat(const QString& format);
     QDate getRschSemesterStart() const;

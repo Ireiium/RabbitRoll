@@ -236,7 +236,7 @@ QString MemberInfoController::getMemberNote(int row) const {
 
 QList<MemberBitSchedule> MemberInfoController::getMemberScheduleSnapshot() const {
     QDate dynamicBase = calculateEarliestMonday();
-    IdleMatchService::instance()->setBaseDate(dynamicBase);
+
 
     QList<MemberBitSchedule> snapshot;
     if (!_model) return snapshot;

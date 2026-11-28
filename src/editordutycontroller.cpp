@@ -6,14 +6,10 @@
 #include <QDate>
 #include "memberinfocomponent.h"
 #include "backendworker.h"
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QJsonDocument>
 #include "undocommands.h"
 #include "projectsetting.h"
 #include <QFile>
 #include <QFileInfo>
-#include <random>
 #include <algorithm>   
 
 EditorDutyController::EditorDutyController(EditorDutyModel* model, EditorDutyView* view, QObject* parent)
@@ -270,6 +266,8 @@ void EditorDutyController::handleEditRow(int index) {
 }
 
 void EditorDutyController::autoSchedule(int targetPerCell, bool enablePrioritize, bool isMultipate) {
+    if (_scheduleActive) return;
+    _scheduleActive = true;
 
     QHash<QString, QStringList> availableMap = _model->getCellDataMap();
 
@@ -281,6 +279,7 @@ void EditorDutyController::autoSchedule(int targetPerCell, bool enablePrioritize
         }
     }
 
+    const int mode = static_cast<int>(_model->getColumnMode());
     using AvailableMapType = QHash<QString, QStringList>;
     QMetaObject::invokeMethod(BackendWorker::instance(), [=]() {
         BackendWorker::instance()->autoSchedule(
@@ -288,12 +287,13 @@ void EditorDutyController::autoSchedule(int targetPerCell, bool enablePrioritize
             targetPerCell,
             enablePrioritize,
             isMultipate,
-            static_cast<int>(_model->getColumnMode())
+            mode
             );
     }, Qt::QueuedConnection);
 }
 
 void EditorDutyController::applyAutoScheduleResults(const QHash<QString, QList<QUuid>>& schedule) {
+    _scheduleActive = false;
     _model->setSelectedIdsMap(schedule);
     _model->refreshView();
     Q_EMIT scheduleFinish(RTypies::Message::Success, "");
@@ -307,6 +307,8 @@ void EditorDutyController::PythonSchedule(const QString& scriptPath, int targetP
         return;
     }
 
+    if (_scheduleActive) return;
+    _scheduleActive = true;
     auto* mComp = ComponentManager::instance()->getComponent<MemberInfoComponent>();
     auto* mModel = mComp->getModel();
     QList<MemberInfoModel::MemberData> allMembersData;
@@ -339,6 +341,7 @@ void EditorDutyController::PythonSchedule(const QString& scriptPath, int targetP
 }
 
 void EditorDutyController::applyPythonScheduleResults(const QHash<QString, QList<QUuid>>& schedule, const QString& debugMsg) {
+    _scheduleActive = false;
     if (!debugMsg.isEmpty()) {
         qDebug() << "Python脚本错误:" << debugMsg;
         Q_EMIT scheduleFinish(RTypies::Message::Failure, debugMsg);
@@ -353,6 +356,7 @@ void EditorDutyController::applyPythonScheduleResults(const QHash<QString, QList
 
 void EditorDutyController::applyAIResult(bool success, const QHash<QString, QList<QUuid>>& schedule,
     const QString& debugMsg) {
+    _scheduleActive = false;
     if (success) {
         _model->setSelectedIdsMap(schedule);
         _model->refreshView();
@@ -380,22 +384,6 @@ void EditorDutyController::handleClearCellsRequest(const QModelIndexList& indice
         }
     }
     _undoStack->endMacro();
-}
-
-static QVariantMap uuidMapToVariant(const QMap<QString, QUuid>& map) {
-    QVariantMap vMap;
-    for (auto it = map.constBegin(); it != map.constEnd(); ++it) {
-        vMap.insert(it.key(), it.value().toString());
-    }
-    return vMap;
-}
-
-static QVariantMap stringMapToVariant(const QMap<QString, QString>& map) {
-    QVariantMap vMap;
-    for (auto it = map.constBegin(); it != map.constEnd(); ++it) {
-        vMap.insert(it.key(), it.value());
-    }
-    return vMap;
 }
 
 void EditorDutyController::abortSchedule() {
@@ -507,99 +495,26 @@ void EditorDutyController::updateDateSlotDirectly(const QDate& oldDate, const QD
 }
 
 #ifdef ENABLE_AI_SUPPORT
-void EditorDutyController::requestAISchedule(const QString& userPrompt, QDate startDate, QDate endDate,
-    bool enableThinking, const QSet<QString>& properties) {
-    qDebug() << "AI排班启动";
+void EditorDutyController::requestAISchedule(const QString& prompt,QDate start,QDate end,bool thinking,const QSet<QString>& properties) {
+    if(_scheduleActive)return;
+    auto candidates=_model->getCellDataMap();
+    const auto prefix=QString::number(_model->getColumnMode())+'_';
+    for(auto it=candidates.begin();it!=candidates.end();){
+        const auto date=QDate::fromString(it.key().section('_',2),Qt::ISODate);
+        if(!it.key().startsWith(prefix)||(_model->getColumnMode()==EditorDutyModel::DateMode&&(date<start||date>end)))it=candidates.erase(it);else ++it;
+    }
+    if(candidates.isEmpty()){Q_EMIT scheduleFinish(RTypies::Message::Failure,"没有可排班的成员");return;}
+    auto members=ComponentManager::instance()->getComponent<MemberInfoComponent>()->getController()->importSnapshot();
+    for (auto& member : members) {
+        for (auto it=member.properties.begin();it!=member.properties.end();) {
+            if (it.key()!="姓名" && !properties.contains(it.key())) it=member.properties.erase(it); else ++it;
+        }
+    }
     BackendWorker::instance()->resetAbort();
-    auto* memberModel = ComponentManager::instance()->getComponent<MemberInfoComponent>()->getModel();
-
-    QMap<QString, QUuid> nameToUuidMap;
-    QString memberListStr = "可用成员：\n";
-    for (int i = 0; i < memberModel->rowCount(); ++i) {
-        auto* data = memberModel->getMemberDataPtr(i);
-        if (!data) continue;
-        QString name = data->properties.value("姓名").toString();
-        nameToUuidMap[name] = data->id;
-
-        QString extra;
-        if (!properties.isEmpty()) {
-            QStringList propValues;
-            for (const QString& prop : properties) {
-                if (!data->properties.contains(prop) || data->properties.value(prop).toString().isEmpty())
-                    continue;
-                propValues << QString("%1: %2").arg(prop).arg(data->properties.value(prop).toString());
-            }
-            if (!propValues.isEmpty()) {
-                extra = "，" + propValues.join("，");
-            }
-        }
-        memberListStr += QString("%1（已排班 %2 次%3）\n").arg(name).arg(data->dutyCount).arg(extra);
-    }
-
-    QMap<QString, QString> taskSlotToKeyMap;
-    QString taskSlotStr = "\n任务槽：\n";
-    int taskIndex = 0;
-    auto cellMap = _model->getCellDataMap();
-    int currentModeInt = static_cast<int>(_model->getColumnMode());
-    int colCount = _model->columnCount();
-    int rowCount = _model->rowCount();
-
-    for (int col = 0; col < colCount; ++col) {
-        QString colId = _model->headerData(col, Qt::Horizontal).toString();
-        if (currentModeInt == 1) {
-            QDate colDate = QDate::fromString(colId, "yyyy-MM-dd");
-            if (colDate.isValid() && (colDate < startDate || colDate > endDate))
-                continue;
-        }
-
-        for (int row = 0; row < rowCount; ++row) {
-            QString timeStr = _model->getTimesRow()->at(row);
-            QString key = QString("%1_%2_%3").arg(currentModeInt).arg(timeStr).arg(colId);
-            if (!cellMap.contains(key) || cellMap[key].isEmpty())
-                continue;
-
-            QString slotDesc = QString("%1_%2").arg(colId).arg(timeStr);
-            taskSlotToKeyMap[slotDesc] = key;
-
-            //可选成员
-            QStringList candNames;
-            for (const QString& uuidStr : cellMap[key]) {
-                QUuid uid(uuidStr);
-                QString mName = memberModel->getNameById(uid);
-                if (!mName.isEmpty()) candNames << mName;
-            }
-            //随机打乱顺序
-            static std::random_device rd;
-            static std::mt19937 g(rd());
-            std::shuffle(candNames.begin(), candNames.end(), g);
-
-			bool limitCandidates = false;//true-限制提取人数，false-不限制
-            if (memberModel->rowCount() <= 5) 
-                limitCandidates = false;
-
-            if (limitCandidates && candNames.size() > 5) {
-                candNames = candNames.first(5);
-            }
-
-            taskSlotStr += QString("[%1] 可选: %2\n").arg(slotDesc).arg(candNames.join(", "));
-        }
-    }
-
-    if (taskSlotToKeyMap.isEmpty()) {
-        Q_EMIT scheduleFinish(RTypies::Message::Failure, "没有可排班的成员");
-        return;
-    }
-
-    QString compressedData = memberListStr + taskSlotStr;
-
-    QMetaObject::invokeMethod(BackendWorker::instance(), [=]() {
-        BackendWorker::instance()->AISchedule(
-            userPrompt,
-            compressedData,
-            nameToUuidMap,
-            taskSlotToKeyMap,
-            enableThinking
-        );
-        }, Qt::QueuedConnection);
+    _scheduleActive=true;
+    QMetaObject::invokeMethod(BackendWorker::instance(),[prompt,candidates,members,thinking]{
+        BackendWorker::instance()->runAISchedule(prompt,candidates,members,thinking);
+    },Qt::QueuedConnection);
 }
+
 #endif

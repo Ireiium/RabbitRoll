@@ -1,19 +1,12 @@
 #include "backendworker.h"
 #include "rschimport.h"
-#include <QJsonArray>
 #include <QJsonObject>
 #include "xlsxdocument.h"
 #include "scriptengine.h"
 #include <random>
 #include <algorithm> 
 #include <QRegularExpression>
-#include <QJsonDocument>
-#include <QJsonParseError>
-#include <QTime>
 
-#ifdef ENABLE_AI_SUPPORT
-#include "AIServiceInterface.h"
-#endif
 
 BackendWorker* BackendWorker::instance() {
     static BackendWorker instance;
@@ -65,6 +58,13 @@ void BackendWorker::scheduleImport(const QJsonObject& json, QDate startDate) {
 }
 
 void BackendWorker::exportExcel(const QString& filePath, const QList<ExportTableData>& tablesData) {
+    QString message;
+    const bool ok = writeExcelFile(filePath,tablesData,message);
+    Q_EMIT excelExportFinished(ok,message);
+}
+
+bool BackendWorker::writeExcelFile(const QString& filePath, const QList<ExportTableData>& tablesData, QString& error) {
+    error.clear();
     QXlsx::Document xlsx;
     QXlsx::Format header;
     header.setFontBold(true);
@@ -78,12 +78,13 @@ void BackendWorker::exportExcel(const QString& filePath, const QList<ExportTable
         QString name = table.sheetName.isEmpty() ? QString("Sheet%1").arg(t + 1) : table.sheetName;
 
         if (t == 0) {
-            xlsx.renameSheet("Sheet1", name);
+            if (!xlsx.renameSheet("Sheet1", name)) xlsx.addSheet(name);
         }
         else {
             xlsx.addSheet(name);
         }
 
+        xlsx.selectSheet(name);
         QVector<int> colWidth(table.horizontalHeaders.size() + 1, 10);
 
         auto calcWidth = [](const QString& text) -> int {
@@ -119,18 +120,20 @@ void BackendWorker::exportExcel(const QString& filePath, const QList<ExportTable
     }
 
     bool ok = xlsx.saveAs(filePath);
-    Q_EMIT excelExportFinished(ok, ok ? "" : "保存失败，请检查文件是否被占用。");
-}
-
-void BackendWorker::exportFeishuExcel(const FeishuExportRequest& request) {
-    QString message;
-    const bool success = FeishuScheduleExporter::exportFile(request, message);
-    Q_EMIT feishuExportFinished(success, message);
+    if (!ok) error = "保存失败，请检查磁盘空间、权限和文件是否被占用。";
+    return ok;
 }
 
 //放弃了直接在程序黎明直接写所有需要的逻辑，转而嵌个AI或者脚本读取引擎。
 void BackendWorker::autoSchedule(const QHash<QString, QStringList>& available, int targetPerCell, bool enablePrioritize, bool isMultipate, int mode) {
     _abort.store(false);
+    Q_EMIT autoScheduleFinished(calculateAutoSchedule(available, targetPerCell,
+        enablePrioritize, isMultipate, mode, &_abort));
+}
+
+QHash<QString, QList<QUuid>> BackendWorker::calculateAutoSchedule(
+    const QHash<QString, QStringList>& available, int targetPerCell,
+    bool enablePrioritize, bool isMultipate, int mode, const std::atomic<bool>* cancelled) {
     QHash<QString, QList<QUuid>> schedule;
     QMap<QUuid, int> userDutyCount;
     QSet<QUuid> scheduledThisWeek;
@@ -143,10 +146,7 @@ void BackendWorker::autoSchedule(const QHash<QString, QStringList>& available, i
     std::random_device rd;
     std::mt19937 g(rd());
     for (const QString& key : cellKeys) {
-        if (_abort.load()) {
-            Q_EMIT autoScheduleFinished(QHash<QString, QList<QUuid>>());
-            return;
-        }
+        if (cancelled && cancelled->load()) return {};
         QStringList availableStrs = available.value(key);
         QList<QUuid> selectedForCell;
 
@@ -178,7 +178,7 @@ void BackendWorker::autoSchedule(const QHash<QString, QStringList>& available, i
         }
         schedule[key] = selectedForCell;
     }
-    Q_EMIT autoScheduleFinished(schedule);
+    return schedule;
 }
 
 void BackendWorker::scriptSchedule(const QString& scriptPath, int targetPerCell, const QHash<QString, QStringList>& available, const QList<MemberInfoModel::MemberData>& allMembersData)
@@ -219,133 +219,6 @@ void BackendWorker::searchMember(const QList<MemberInfoModel::MemberData>& allMe
 
     Q_EMIT searchMemberFinished(names, dataList);
 }
-
-#ifdef ENABLE_AI_SUPPORT
-void BackendWorker::AISchedule(const QString& userPrompt, const QString& compressedData,
-    const QMap<QString, QUuid>& nameMap,
-    const QMap<QString, QString>& taskSlotMap, bool enableThinking) {
-    if (_abort.load()) {
-        Q_EMIT aiScheduleFinished(false, {}, "用户中止");
-        return;
-    }
-    _aiService = AIServiceInterface::instance();
-    if (!_aiService || !_aiService->hasApiKey()) {
-        Q_EMIT aiScheduleFinished(false, {}, "请先在设置的“启用 AI 排班”下填写并保存 API key。");
-        return;
-    }
-
-    if (nameMap.isEmpty()) {
-        Q_EMIT aiScheduleFinished(false, {}, "没有可排班的成员");
-        return;
-    }
-
-    QString systemPrompt = "你是专业排班AI。按要求分配成员。\n"
-        "规则：\n"
-        "1. 每个任务槽默认分配2人（不足则分配1人）\n"
-        "2. 尽量不重复选择同一成员\n"
-        "3. 只输出一个纯JSON对象，不要包含任何其他文字、解释或Markdown标记\n"
-        "4. JSON必须在一行内，不得换行\n"
-        "输出示例：{\"周一_08:00-10:00\":[\"张三\",\"李四\"],\"周一_10:00-12:00\":[\"王五\",\"赵六\"]}\n"
-        "注意：槽位描述格式为 星期/日期_时间段，如 周一_08:00-10:00 或 2025-03-15_14:00-16:00";
-
-    QString finalPrompt = systemPrompt + "\n" + compressedData +
-        "\n【特殊要求】:" + userPrompt + "\n输出JSON:";
-
-    qDebug() << "提示词长度:" << finalPrompt.size() << "字符";
-
-    if (finalPrompt.toUtf8().size() > 100000) {
-        Q_EMIT aiScheduleFinished(false, {}, "提示词超过10万字节，请减少成员或时间段");
-        return;
-    }
-
-    QString aiResponse = _aiService->generateResponseStreaming(finalPrompt, enableThinking);
-    /*qDebug() << "=== AI 原始响应 ===" << aiResponse << "========";*/
-
-    if (_abort.load()) {
-        Q_EMIT aiScheduleFinished(false, {}, "用户中止");
-        return;
-    }
-
-    if (aiResponse.startsWith("API Error:") || aiResponse.startsWith("HTTP Error")) {
-        qDebug() << "DeepSeek API 错误:" << aiResponse;
-        Q_EMIT aiScheduleFinished(false, {}, "AI接口错误：" + aiResponse);
-        return;
-    }
-
-    aiResponse = aiResponse.trimmed();
-
-    // 去除可能的 Markdown 代码块
-    if (aiResponse.startsWith("```json")) {
-        aiResponse = aiResponse.mid(7);
-        if (aiResponse.endsWith("```")) aiResponse.chop(3);
-    }
-    else if (aiResponse.startsWith("```")) {
-        aiResponse = aiResponse.mid(3);
-        if (aiResponse.endsWith("```")) aiResponse.chop(3);
-    }
-
-    int firstBrace = aiResponse.indexOf('{');
-    int lastBrace = aiResponse.lastIndexOf('}');
-
-    if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
-        aiResponse = aiResponse.mid(firstBrace, lastBrace - firstBrace + 1);
-
-        //如果花括号不匹配，尝试从第一个 '{' 重新提取
-        int braceCount = 0;
-        for (int i = 0; i < aiResponse.size(); ++i) {
-            if (aiResponse[i] == '{') braceCount++;
-            else if (aiResponse[i] == '}') braceCount--;
-        }
-        if (braceCount != 0) {
-            firstBrace = aiResponse.indexOf('{');
-            lastBrace = aiResponse.lastIndexOf('}');
-            if (firstBrace != -1 && lastBrace > firstBrace)
-                aiResponse = aiResponse.mid(firstBrace, lastBrace - firstBrace + 1);
-        }
-    }
-    else {
-        qDebug() << "返回非法格式：" << aiResponse;
-        Q_EMIT aiScheduleFinished(false, {}, "AI返回格式错误，未找到完整JSON");
-        return;
-    }
-
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(aiResponse.toUtf8(), &error);
-    QHash<QString, QList<QUuid>> finalResults;
-
-    if (error.error == QJsonParseError::NoError && doc.isObject()) {
-        QJsonObject obj = doc.object();
-        for (auto it = obj.begin(); it != obj.end(); ++it) {
-            QString slotDesc = it.key(); 
-            QString realKey = taskSlotMap.value(slotDesc);
-            if (realKey.isEmpty()) continue;
-
-            if (!it.value().isArray()) {
-                Q_EMIT aiScheduleFinished(false, {}, "AI返回的任务内容不是成员列表");
-                return;
-            }
-            QJsonArray arr = it.value().toArray();
-            QList<QUuid> uuids;
-            for (int i = 0; i < arr.size(); ++i) {
-                QString name = arr[i].toString();
-                if (nameMap.contains(name) && !uuids.contains(nameMap.value(name)))
-                    uuids.append(nameMap.value(name));
-            }
-            finalResults.insert(realKey, uuids);
-        }
-        if (finalResults.isEmpty()) {
-            Q_EMIT aiScheduleFinished(false, {}, "AI未返回任何有效任务槽");
-        }
-        else {
-            Q_EMIT aiScheduleFinished(true, finalResults, "");
-        }
-    }
-    else {
-        qDebug() << "JSON 解析失败:" << error.errorString();
-        Q_EMIT aiScheduleFinished(false, {}, "AI返回JSON解析失败：" + error.errorString());
-    }
-}
-#endif
 
 void BackendWorker::resetAbort() { 
     _abort.store(false); 

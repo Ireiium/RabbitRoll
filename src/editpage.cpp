@@ -83,6 +83,8 @@ void EditPage::initialUI() {
 }
 
 void EditPage::initialSignalAndSlot() {
+    connect(ComponentManager::instance()->getComponent<EditorDutyComponent>()->getModel(),
+        &QAbstractItemModel::modelReset, this, &EditPage::resetBtnText);
 	connect(_addTimeRowBtn, &ElaPushButton::clicked, [=]() {
 		Q_EMIT popWinDialog(RTypies::WinDialog::AddEditorTimeRow, QVariant());
 		});

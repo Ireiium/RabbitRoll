@@ -1,5 +1,4 @@
 #include "settings.h"
-#include "exceltemplates.h"
 #ifdef ENABLE_AI_SUPPORT
 #include "apikeystore.h"
 #include <QCoreApplication>
@@ -83,10 +82,6 @@ void Settings::setEnableConsole(bool enable) {
     m_settings->setValue("EnableConsole", enable);
 }
 
-QString Settings::getExcelTemplate() const {
-    return m_settings->value("ExcelTemplate", ExcelTemplates::defaultFileName()).toString();
-}
-
 QString Settings::getRschImportFormat() const {
     return m_settings->value("RschImportFormat", "姓名").toString();
 }
@@ -99,9 +94,6 @@ QDate Settings::getRschSemesterStart() const {
 }
 void Settings::setRschSemesterStart(const QDate& date) {
     if (date.isValid() && date.dayOfWeek() == 1) m_settings->setValue("RschSemesterStart", date.toString(Qt::ISODate));
-}
-void Settings::setExcelTemplate(const QString& fileName) {
-    m_settings->setValue("ExcelTemplate", fileName);
 }
 
 //UI和窗口设置

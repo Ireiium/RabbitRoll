@@ -36,7 +36,7 @@ QString AIServiceInterface::generateResponse(const QString& prompt)
     return service.ask(systemPrompt, prompt, key, model);
 }
 
-QString AIServiceInterface::generateResponseStreaming(const QString& prompt, bool enableThinking)
+QString AIServiceInterface::generateResponseStreaming(const QString& prompt, bool enableThinking, const std::atomic<bool>* cancelled)
 {
     QString key, model;
     {
@@ -52,5 +52,5 @@ QString AIServiceInterface::generateResponseStreaming(const QString& prompt, boo
     QObject::connect(&service, &DeepSeekService::responseFinished,
         this, &AIServiceInterface::aiFinished, Qt::DirectConnection);
 
-    return service.askStreaming(systemPrompt, prompt, key, model, enableThinking);
+    return service.askStreaming(systemPrompt, prompt, key, model, enableThinking,cancelled);
 }

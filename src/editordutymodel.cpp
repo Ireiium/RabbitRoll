@@ -456,3 +456,7 @@ void EditorDutyModel::updateDateSlotByString(const QString& oldDateStr, const QD
 	if (col != -1) updateDateSlot(col, newDate);
 }
 
+
+void EditorDutyModel::replaceAllAssignments(const QHash<QString,QList<QUuid>>& assignments) {
+    beginResetModel(); _selectedIdsMap = assignments; _cellDataMap.clear(); endResetModel();
+}

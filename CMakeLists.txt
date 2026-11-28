@@ -31,13 +31,16 @@ set_target_properties(Python3::Python PROPERTIES
 )
 set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}" CACHE INTERNAL "")
 
-add_definitions(-DQT_NO_KEYWORDS)
 add_subdirectory(libs/pybind11)
 find_package(ElaWidgetTools CONFIG REQUIRED
     PATHS "${CMAKE_CURRENT_SOURCE_DIR}/libs/ElaWidgetTools/lib/cmake"
     NO_DEFAULT_PATH
 )
+option(ENABLE_MCP "Build the independent stdio MCP helper and local business IPC" ON)
 add_subdirectory(src)
+if(ENABLE_MCP)
+    add_subdirectory(src/mcp)
+endif()
 
 # Use the usual Windows portable layout, with the executable and DLLs together.
 install(TARGETS RabbitRoll
@@ -65,12 +68,6 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     DESTINATION licenses
     RENAME "LICENSE_RabbitRoll_MIT.txt"
 )
-install(CODE "
-    set(SOURCE_DIR [[${CMAKE_CURRENT_SOURCE_DIR}/excelTemplate]])
-    set(DESTINATION_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/excelTemplate\")
-    set(COPY_TEMPLATE_FILES OFF)
-    include([[${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyExcelTemplates.cmake]])
-")
 
 # Quote the executable path so Qt deployment also works in directories with spaces.
 qt_generate_deploy_script(

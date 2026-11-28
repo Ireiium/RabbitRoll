@@ -32,6 +32,9 @@
 #include <QMimeData>
 #include <QUrl>
 #include <QDir>
+#ifdef ENABLE_MCP_SUPPORT
+#include "mcp/ipcserver.h"
+#endif
 
 #ifdef ENABLE_AI_SUPPORT
 #include "AIServiceInterface.h"
@@ -97,6 +100,10 @@ MainWindow::MainWindow(bool hasAI, QWidget* parent)
 {
     _actionController = new ProjectActionController(this);
     initialModel();//初始化顺序不能改
+#ifdef ENABLE_MCP_SUPPORT
+    _mcpServer = new RabbitRollIpcServer(this);
+    if (!_mcpServer->setEnabled(true)) qWarning().noquote() << _mcpServer->status();
+#endif
 	initialWindow();
     initInterface();
     setNavBar();
@@ -115,6 +122,9 @@ MainWindow::MainWindow(bool hasAI, QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+#ifdef ENABLE_MCP_SUPPORT
+    delete _mcpServer;
+#endif
     if (_workerThread && _workerThread->isRunning()) {
         _workerThread->quit();
         _workerThread->wait();
@@ -239,7 +249,6 @@ void MainWindow::initialWindow()
     ElaMenu* buildMenu = menuBar->addMenu(ElaIconType::AtomSimple, "生成");
     buildMenu->setMenuItemHeight(25);
     _exportExcelBtn = buildMenu->addElaIconAction(ElaIconType::FileExcel, "导出值班表为Excel");
-    _exportFeishuExcelBtn = buildMenu->addElaIconAction(ElaIconType::FileExcel, "导出飞书排班表...");
     buildMenu->addSeparator();
     _exportMemberBtn = buildMenu->addElaIconAction(ElaIconType::FileArrowUp, "导出成员列表");
     _exportMembersExcelBtn = buildMenu->addElaIconAction(ElaIconType::FileExcel, "导出成员列表为Excel");
@@ -299,7 +308,6 @@ void MainWindow::initialWindow()
     connect(_saveBtn, &QAction::triggered, _actionController, &ProjectActionController::handleSaveProject);
     connect(_saveAsBtn, &QAction::triggered, _actionController, &ProjectActionController::handleSaveAsProject);
     connect(_exportExcelBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportScheduleExcel);
-    connect(_exportFeishuExcelBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportFeishuScheduleExcel);
     connect(_exportMembersExcelBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportMembersExcel);
     connect(_exportMemberBtn, &QAction::triggered, _actionController, &ProjectActionController::handleExportMembersData);
     connect(_importMemberBtn, &QAction::triggered, _actionController, &ProjectActionController::handleImportMembersData);
@@ -312,7 +320,7 @@ void MainWindow::initialWindow()
         setProjectWorkspaceEnabled(true);//读取成功后激活界面菜单
         });
 
-    connect(_actionController, &ProjectActionController::projectSavedSuccessfully, this, [=](const QString& filePath) {
+    connect(ProjectManager::instance(), &ProjectManager::projectFileSaved, this, [=](const QString& filePath) {
         updateWindowTitle();
         updateRecentFiles(filePath);
         });
@@ -321,6 +329,17 @@ void MainWindow::initialWindow()
     connect(_memberPage, &MemberPage::exportMembersRequested, _actionController, &ProjectActionController::handleExportMembersData);
     connect(_memberPage, &MemberPage::exportSchedule, _actionController, &ProjectActionController::handleExportSchedule);
 
+
+    connect(ProjectManager::instance(), &ProjectManager::projectLoaded, this, [this] {
+        initialNavigation(); setProjectWorkspaceEnabled(true);
+        _editPage->setEnabled(true); _memberPage->setEnabled(true); _projectPage->setEnabled(true);
+        if (!ProjectManager::instance()->currentFilePath().isEmpty()) updateRecentFiles(ProjectManager::instance()->currentFilePath());
+    });
+    connect(ProjectManager::instance(), &ProjectManager::projectClosed, this, [this] {
+        setProjectWorkspaceEnabled(false);
+        _editPage->setEnabled(false); _memberPage->setEnabled(false); _projectPage->setEnabled(false);
+        navigation(_homePage->property("ElaPageKey").toString());
+    });
 
     //更新标题状态
     connect(ProjectManager::instance(), &ProjectManager::projectStatusChanged, this, &MainWindow::updateWindowTitle);
@@ -363,7 +382,6 @@ void MainWindow::setProjectWorkspaceEnabled(bool enabled) {
     if (_saveBtn) _saveBtn->setEnabled(enabled);
     if (_saveAsBtn) _saveAsBtn->setEnabled(enabled);
     if (_exportExcelBtn) _exportExcelBtn->setEnabled(enabled);
-    if (_exportFeishuExcelBtn) _exportFeishuExcelBtn->setEnabled(enabled);
     if (_exportMemberBtn) _exportMemberBtn->setEnabled(enabled);
     if (_exportMembersExcelBtn) _exportMembersExcelBtn->setEnabled(enabled);
     if (_importMemberBtn) _importMemberBtn->setEnabled(enabled);

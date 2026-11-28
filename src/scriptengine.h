@@ -1,4 +1,5 @@
 #include <QObject>
+#include <atomic>
 #include <QHash>
 #include <QString>
 #include <QStringList>
@@ -11,17 +12,22 @@ class ScriptEngine : public QObject {
 
 Q_SIGNALS:
     void scriptChangedData(bool isChnaged);
+    void scriptsChanged();
 
 public:
     static ScriptEngine* instance();
     void init();
+    QString checkSyntax(const QString& code);
 
     QHash<QString, QList<QUuid>> runScheduleScript(
         const QString& scriptPath,
         int targetPerCell,
         const QHash<QString, QStringList>& taskCandidates,
         const QList<MemberInfoModel::MemberData>& allMembersData,
-        QString& debugMsg
+        QString& debugMsg,
+        QMap<QUuid, QVariantMap>* deferredProperties = nullptr,
+        int timeoutMs = 0,
+        const std::atomic<bool>* cancelled = nullptr
     );
 
     bool _canScriptWork{ false };

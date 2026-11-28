@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include "componentmanager.h"
 
 namespace py = pybind11;
@@ -63,7 +64,8 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
     int targetPerCell,
     const QHash<QString, QStringList>& taskCandidates,
     const QList<MemberInfoModel::MemberData>& allMembersData,
-    QString& debugMsg)
+    QString& debugMsg, QMap<QUuid, QVariantMap>* deferredProperties,
+    int timeoutMs, const std::atomic<bool>* cancelled)
 {
     qDebug() << "运行脚本" << scriptPath;
     debugMsg.clear();
@@ -74,6 +76,26 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
     }
 
     py::gil_scoped_acquire acquire;
+    // Tracing bounds ordinary Python loops; native extension calls cannot be
+    // preempted. Only installed local scripts are exposed through MCP.
+    py::object trace, previousTrace;
+    auto sys = py::module_::import("sys");
+    QElapsedTimer elapsed;
+    elapsed.start();
+    if (timeoutMs > 0) {
+        previousTrace = sys.attr("gettrace")();
+        trace = py::cpp_function([&](py::object, py::object, py::object) -> py::object {
+            if (elapsed.elapsed() > timeoutMs || (cancelled && cancelled->load()))
+                throw std::runtime_error("Script time limit exceeded or operation cancelled");
+            return trace;
+        });
+        sys.attr("settrace")(trace);
+    }
+    struct TraceGuard {
+        py::object sys, previous;
+        bool active;
+        ~TraceGuard() { if (active) { try { sys.attr("settrace")(previous); } catch (...) { PyErr_Clear(); } } }
+    } traceGuard{sys, previousTrace, timeoutMs > 0};
 
     try {
         std::map<std::string, std::vector<std::string>> apiTaskData;
@@ -215,6 +237,13 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
         }
         if (api.hasModified()) {
             const auto updates = api.pendingProperties();
+            if (deferredProperties) {
+                for (const auto& member : updates)
+                    for (const auto& property : member.second)
+                        (*deferredProperties)[QUuid(QString::fromStdString(member.first))]
+                            [QString::fromStdString(property.first)] = QString::fromStdString(property.second);
+                return schedule;
+            }
             // The worker only collects changes. Models and undo stacks belong to the GUI thread.
             QMetaObject::invokeMethod(QCoreApplication::instance(), [this, updates]() {
                 auto* component = ComponentManager::instance()->getComponent<MemberInfoComponent>();
@@ -248,4 +277,12 @@ QHash<QString, QList<QUuid>> ScriptEngine::runScheduleScript(
     }
 
     return schedule;
+}
+
+QString ScriptEngine::checkSyntax(const QString& code) {
+    if (!_canScriptWork) return "Python 引擎未就绪。";
+    py::gil_scoped_acquire acquire;
+    try { auto compiled=py::module_::import("builtins").attr("compile")(code.toStdString(),"<MCP script>","exec"); }
+    catch(const py::error_already_set& e){return QString::fromUtf8(e.what());}
+    return {};
 }

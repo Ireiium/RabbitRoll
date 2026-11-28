@@ -14,3 +14,8 @@ foreach(example_script IN LISTS example_scripts)
         configure_file("${example_script}" "${DESTINATION_DIR}/${script_name}" COPYONLY)
     endif()
 endforeach()
+
+# Keep the bundled instructions current while preserving user-edited Python files.
+if(EXISTS "${SOURCE_DIR}/README.md")
+    configure_file("${SOURCE_DIR}/README.md" "${DESTINATION_DIR}/README.md" COPYONLY)
+endif()

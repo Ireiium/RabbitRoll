@@ -53,6 +53,10 @@ public:
 
     
     static TimeMask timeStringToMask(const QString& timeRange);//将时间转为timeMask
+    // Shared by the UI precalculation and read-only business queries.
+    static bool matchesAvailability(const MemberBitSchedule& member, int mode,
+        const QString& target, const TimeMask& queryMask, const QDate& start,
+        const QDate& end, bool restrictDates, int tolerance);
 
     void setBaseDate(const QDate& date);
     QDate getBaseDate() const;

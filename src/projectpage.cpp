@@ -17,6 +17,7 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QTimer>
+#include <QSignalBlocker>
 
 namespace {
 class ToleranceHoverHelp : public QObject
@@ -111,6 +112,9 @@ ProjectPage::ProjectPage(QWidget *parent)
 
 
     connect(ProjectManager::instance(), &ProjectManager::projectLoaded, this, &ProjectPage::reload);
+    connect(ProjectSetting::instance(), &ProjectSetting::projectNameChanged, this, &ProjectPage::reload);
+    connect(ProjectSetting::instance(), &ProjectSetting::toleranceChanged, this, &ProjectPage::reload);
+    connect(ProjectSetting::instance(), &ProjectSetting::searchRangeChanged, this, &ProjectPage::reload);
 
     connect(ProjectManager::instance(), &ProjectManager::saveFinished, this, [=](bool ok) {
         if (ok) reload();
@@ -280,36 +284,14 @@ void ProjectPage::initialUI(){
 
 //重置（刷新）
 void ProjectPage::reload() {
-    _nameEdit->blockSignals(true);
-    _tolSpin->blockSignals(true);
-    _startDatePicker->blockSignals(true);
-    _endDatePicker->blockSignals(true);
-    _dateSearchSwitch->blockSignals(true);
-
-    _nameEdit->setText(ProjectSetting::instance()->_projectName);
-    _tolSpin->setValue(ProjectSetting::instance()->_toleranceValue);
-
-    _startDatePicker->setSelectedDate(ProjectSetting::instance()->_searchStartDate);
-    _endDatePicker->setSelectedDate(ProjectSetting::instance()->_searchEndDate);
-
-    bool isEnabled = ProjectSetting::instance()->_enableSerchDateRange;
-    _dateSearchSwitch->blockSignals(true);
-    _dateSearchSwitch->setIsToggled(isEnabled);
-    _dateSearchSwitch->blockSignals(false);
-
-    if (isEnabled) {
-        _drawer->expand();
-    }
-    else {
-        _drawer->collapse();
-    }
-
-    _nameEdit->blockSignals(false);
-    _tolSpin->blockSignals(false);
-    _startDatePicker->blockSignals(false);
-    _endDatePicker->blockSignals(false);
-    _dateSearchSwitch->blockSignals(false);
-
+    const QSignalBlocker nameBlock(_nameEdit), toleranceBlock(_tolSpin), startBlock(_startDatePicker),
+        endBlock(_endDatePicker), switchBlock(_dateSearchSwitch), drawerBlock(_drawer);
+    auto* settings = ProjectSetting::instance();
+    _nameEdit->setText(settings->_projectName);
+    _tolSpin->setValue(settings->_toleranceValue);
+    _startDatePicker->setSelectedDate(settings->_searchStartDate);
+    _endDatePicker->setSelectedDate(settings->_searchEndDate);
+    _dateSearchSwitch->setIsToggled(settings->_enableSerchDateRange);
+    if (settings->_enableSerchDateRange) _drawer->expand();
+    else _drawer->collapse();
 }
-
-

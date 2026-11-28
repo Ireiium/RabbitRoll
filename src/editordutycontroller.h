@@ -55,6 +55,7 @@ public:
     void applyCalculationResults(const QHash<QString, QStringList>& schedule);
     void setSelectedIds(const QModelIndex& index, const QList<QUuid>& ids);
 
+    bool isScheduling() const { return _scheduleActive; }
     void autoSchedule(int targetPerCell, bool enablePrioritize, bool isMultipate);
     void PythonSchedule(const QString& scriptPath, int targetPerCell);
 
@@ -82,6 +83,7 @@ public:
 #endif
 
 private:
+    bool _scheduleActive{false};
     EditorDutyModel* _model{ nullptr };
     EditorDutyView* _view{ nullptr };
     QUndoStack* _undoStack{ nullptr };

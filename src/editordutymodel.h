@@ -60,6 +60,7 @@ public:
 
     const QHash<QString, QList<QUuid>>& getSelectedIdsMap() const;
 
+    void replaceAllAssignments(const QHash<QString,QList<QUuid>>& assignments);
     void setSelectedIdsMap(const QHash<QString, QList<QUuid>>& map);
 
     const QHash<QString, QStringList>& getCellDataMap() const;

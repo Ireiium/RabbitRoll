@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <atomic>
 #include <QString>
 #include <QReadWriteLock>
 
@@ -10,7 +11,7 @@ public:
     static AIServiceInterface* instance();
 
     QString generateResponse(const QString& prompt);
-    QString generateResponseStreaming(const QString& prompt, bool enableThinking = false);
+    QString generateResponseStreaming(const QString& prompt, bool enableThinking = false, const std::atomic<bool>* cancelled = nullptr);
 
     void setApiKey(const QString& key);
     void setModel(const QString& model);

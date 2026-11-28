@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <atomic>
 #include <QNetworkAccessManager>
 
 class DeepSeekService : public QObject
@@ -13,7 +14,7 @@ public:
 
     QString askStreaming(const QString& systemPrompt, const QString& userPrompt,
         const QString& apiKey, const QString& model,
-        bool enableThinking = false);
+        bool enableThinking = false, const std::atomic<bool>* cancelled = nullptr);
 
 Q_SIGNALS:
     void responseChunkReady(const QString& chunk);

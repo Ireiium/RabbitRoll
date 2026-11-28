@@ -20,7 +20,6 @@
 #include "ElaPushButton.h"
 #include "scriptengine.h"
 #include "settings.h"
-#include "exceltemplatepicker.h"
 #ifdef ENABLE_AI_SUPPORT
 #include "ElaLineEdit.h"
 #include <QTimer>
@@ -40,6 +39,7 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
     mainLayout->setContentsMargins(0, 0, 20, 20);
     mainLayout->setSpacing(15);
     mainLayout->addWidget(new ElaText("设置", 30));
+
 
 
     _isEnabledScript = Settings::instance()->getEnableScript();
@@ -227,9 +227,6 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
     Q_EMIT enableAIChanged(_enableAISwitch->getIsToggled());
 
 #endif
-    mainLayout->addWidget(new ElaText("导出设置", 20));
-    auto* templatePicker = new ExcelTemplatePicker(container);
-    mainLayout->addWidget(templatePicker);
     mainLayout->addWidget(new ElaText(" 主题设置", 20));
     ElaScrollPageArea* themeArea = new ElaScrollPageArea(container);
     mainLayout->addWidget(themeArea);
@@ -371,9 +368,20 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
         });
 
     //脚本文件切换
+    connect(ScriptEngine::instance(),&ScriptEngine::scriptsChanged,this,[this,scriptComboBox] {
+        const QDir directory(QCoreApplication::applicationDirPath()+"/scripts");
+        const auto names=directory.entryList({"*.py"},QDir::Files|QDir::NoSymLinks,QDir::Name);
+        const auto previous=_script;
+        scriptComboBox->blockSignals(true);scriptComboBox->clear();scriptComboBox->addItems(names);
+        _script=names.contains(previous)?previous:names.value(0);scriptComboBox->setCurrentText(_script);scriptComboBox->blockSignals(false);
+        _enableScriptSwitch->setEnabled(!names.isEmpty());
+        Settings::instance()->setDefaultScript(_script);
+        if(names.isEmpty()){_enableScriptSwitch->setIsToggled(false);Settings::instance()->setEnableScript(false);}
+        Q_EMIT scriptChanged(_script);
+    });
     connect(scriptComboBox, &ElaComboBox::currentTextChanged, this, [=](const QString& text) {
         _script = text;
-        if (scripts.contains(text)) {
+        if (QDir(QCoreApplication::applicationDirPath()+"/scripts").entryList({"*.py"},QDir::Files|QDir::NoSymLinks).contains(text)) {
             //QSettings s("Ireiium", "RabbitRoll");
             //s.setValue("DefaultScript", text);
             Settings::instance()->setDefaultScript(text);
@@ -466,7 +474,6 @@ SettingPage::SettingPage(bool hasAI, QWidget* parent)
 
     connect(recoverBtn, &ElaPushButton::clicked, this, [=]() {
         Settings::instance()->clearAllSettings();
-        templatePicker->reloadTemplates();
 
         if (themeGroup->button(0)) {
             themeGroup->button(0)->setChecked(true);

@@ -152,6 +152,7 @@ void IdleMatchService::realDoCalculation() {
     _tolerance = ProjectSetting::instance()->_toleranceValue;
     int tol = _tolerance;
 
+    setBaseDate(mController->calculateEarliestMonday());
     QDate baseSnapshot = getBaseDate();
 
     /*qDebug() << "开始计算";*/
@@ -224,30 +225,9 @@ QHash<QString, QStringList> IdleMatchService::runPrecalculation(
 
             for (const auto& member : members) {
                 if (service->_abortPending.loadRelaxed() > 0) return {};
-                if (editorMode == 1) {
-                    TimeMask dayMask = member.dailyMask.contains(targetDate) ?
-                        member.dailyMask.value(targetDate) :
-                        MemberBitSchedule::allIdleMask();
-
-                    if ((dayMask & queryMask) == queryMask) {
-                        availableNames << member.id.toString();
-                    }
-                }
-                else {//周期模式
-                    int dayOfWeek = weekTextToNum.value(colName, -1);
-                    if (dayOfWeek >= 1 && dayOfWeek <= 7) {
-                        int conflictWeeks = 0;
-                        // Dates remain accurate when projects span more than 64 weeks.
-                        for (auto it = member.dailyMask.constBegin(); it != member.dailyMask.constEnd(); ++it) {
-                            if (it.key() >= startDate && it.key() <= endDate && it.key().dayOfWeek() == dayOfWeek &&
-                                (it.value() & queryMask) != queryMask) {
-                                if (++conflictWeeks > tolerance) break;
-                            }
-                        }
-                        if (conflictWeeks <= tolerance) {
-                            availableNames << member.id.toString();
-                        }
-                    }
+                if (matchesAvailability(member, editorMode, colName, queryMask,
+                        startDate, endDate, isEnableDateSearch, tolerance)) {
+                    availableNames << member.id.toString();
                 }
             }
             resultCache[cacheKey] = availableNames;
@@ -282,4 +262,27 @@ QDate IdleMatchService::getBaseDate() const {
     _baseDateLock.unlock();
 
     return tempDate;
+}
+
+// No cached UI state is read here. Both callers use the same minute masks and
+// the same project date range/tolerance semantics.
+bool IdleMatchService::matchesAvailability(const MemberBitSchedule& member, int mode,
+    const QString& target, const TimeMask& mask, const QDate& start, const QDate& end,
+    bool restrictDates, int tolerance) {
+    if (mask.none() || !start.isValid() || !end.isValid() || start > end) return false;
+    if (mode == 1) {
+        const auto date = QDate::fromString(target, "yyyy-MM-dd");
+        if (!date.isValid() || (restrictDates && (date < start || date > end))) return false;
+        const auto day = member.dailyMask.value(date, MemberBitSchedule::allIdleMask());
+        return (day & mask) == mask;
+    }
+    const QStringList days{"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+    const int weekday = days.indexOf(target) + 1;
+    if (weekday < 1 || start.addDays((weekday - start.dayOfWeek() + 7) % 7) > end) return false;
+    int conflicts = 0;
+    for (auto it = member.dailyMask.cbegin(); it != member.dailyMask.cend(); ++it) {
+        if (it.key() >= start && it.key() <= end && it.key().dayOfWeek() == weekday
+            && (it.value() & mask) != mask && ++conflicts > tolerance) return false;
+    }
+    return true;
 }

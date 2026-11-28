@@ -97,14 +97,6 @@ qt_add_executable(RabbitRoll
     batchrschimportdialog.cpp
     backendworker.h
     backendworker.cpp
-    feishuscheduleexporter.h
-    feishuscheduleexporter.cpp
-    feishuexportdialog.h
-    feishuexportdialog.cpp
-    exceltemplates.h
-    exceltemplates.cpp
-    exceltemplatepicker.h
-    exceltemplatepicker.cpp
     RecentFileButton.h
     RecentFileButton.cpp
     projectactioncontroller.h
@@ -134,6 +126,7 @@ set_target_properties(RabbitRollQXlsx PROPERTIES
 
 if(ENABLE_AI)
     target_sources(RabbitRoll PRIVATE
+        aischedulecalculator.cpp
         AIServiceInterface.h
         AIServiceInterface.cpp
         deepseekservice.h
@@ -168,6 +161,13 @@ target_link_libraries(RabbitRoll PRIVATE
     ElaWidgetTools
     RabbitRollQXlsx
 )
+target_compile_definitions(RabbitRoll PRIVATE QT_NO_KEYWORDS)
+if(ENABLE_MCP)
+    target_compile_definitions(RabbitRoll PRIVATE ENABLE_MCP_SUPPORT)
+    target_sources(RabbitRoll PRIVATE mcp/commandcontext.cpp mcp/commandcontext.h mcp/extendedcommands.cpp mcp/commands.cpp mcp/commands.h mcp/businessadapter.cpp mcp/businessadapter.h
+        mcp/ipcserver.cpp mcp/ipcserver.h mcp/ipcprotocol.cpp mcp/ipcprotocol.h)
+    target_include_directories(RabbitRoll PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
 
 # pybind11 keeps application Debug builds compatible with release CPython.
 # Do not define Py_DEBUG: the bundled runtime is python312.dll.
@@ -196,16 +196,6 @@ add_custom_target(RabbitRollExampleScripts
     VERBATIM
 )
 add_dependencies(RabbitRoll RabbitRollExampleScripts)
-
-add_custom_target(RabbitRollExcelTemplates
-    COMMAND "${CMAKE_COMMAND}"
-        "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/excelTemplate"
-        "-DDESTINATION_DIR=$<TARGET_FILE_DIR:RabbitRoll>/excelTemplate"
-        -P "${PROJECT_SOURCE_DIR}/cmake/CopyExcelTemplates.cmake"
-    COMMENT "RabbitRoll: deploying Excel templates"
-    VERBATIM
-)
-add_dependencies(RabbitRoll RabbitRollExcelTemplates)
 
 option(RABBITROLL_DEPLOY_QT_AFTER_BUILD "Deploy Qt runtime next to the built executable" ON)
 if(RABBITROLL_DEPLOY_QT_AFTER_BUILD)

@@ -28,24 +28,20 @@ void ProjectWorker::doLoad(const QString& filePath) {
 }
 
 void ProjectWorker::doSave(const QString& filePath, const QJsonObject& root) {
+    const auto message = writeJsonFile(filePath,root);
+    if (message.isEmpty()) Q_EMIT saveDone();
+    else Q_EMIT error(message);
+}
+
+QString ProjectWorker::writeJsonFile(const QString& filePath, const QJsonObject& root) {
     QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly)) {
-        Q_EMIT error("保存失败，磁盘空间不足或无权写入。");
-        return;
-    }
-
-    QJsonDocument doc(root);
-    const QByteArray data = doc.toJson();
+    if (!file.open(QIODevice::WriteOnly)) return "保存失败：" + file.errorString();
+    const QByteArray data = QJsonDocument(root).toJson();
     if (file.write(data) != data.size()) {
+        const auto message = file.errorString();
         file.cancelWriting();
-        Q_EMIT error("写入失败，文件未完整保存。");
-        return;
+        return "写入失败：" + message;
     }
-
-    if (file.commit()) {
-        Q_EMIT saveDone();
-    }
-    else {
-        Q_EMIT error("写入失败，文件未完整保存。");
-    }
+    if (!file.commit()) return "提交文件失败：" + file.errorString();
+    return {};
 }

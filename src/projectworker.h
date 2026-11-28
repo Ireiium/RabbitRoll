@@ -8,6 +8,7 @@ class ProjectWorker : public QObject
     Q_OBJECT
 public:
     explicit ProjectWorker(QObject* parent = nullptr);
+    static QString writeJsonFile(const QString& filePath, const QJsonObject& root);
 
 Q_SIGNALS:
     void loadDone(const QJsonObject& data);

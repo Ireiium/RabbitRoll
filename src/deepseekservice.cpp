@@ -1,4 +1,5 @@
 #include "deepseekservice.h"
+#include <QTimer>
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -73,7 +74,7 @@ QString DeepSeekService::ask(const QString& systemPrompt, const QString& userPro
 }
 
 QString DeepSeekService::askStreaming(const QString& systemPrompt, const QString& userPrompt,
-    const QString& apiKey, const QString& model, bool enableThinking)
+    const QString& apiKey, const QString& model, bool enableThinking, const std::atomic<bool>* cancelled)
 {
     QNetworkRequest request(QUrl("https://api.deepseek.com/chat/completions"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -108,6 +109,11 @@ QString DeepSeekService::askStreaming(const QString& systemPrompt, const QString
     QByteArray data = doc.toJson();
     QNetworkReply* reply = m_manager->post(request, data);
 
+    QTimer cancelTimer, deadline;
+    cancelTimer.setInterval(50);
+    connect(&cancelTimer,&QTimer::timeout,reply,[reply,cancelled]{if(cancelled&&cancelled->load())reply->abort();});
+    if(cancelled)cancelTimer.start();
+    deadline.setSingleShot(true);connect(&deadline,&QTimer::timeout,reply,&QNetworkReply::abort);deadline.start(120000);
     QEventLoop loop;
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
 

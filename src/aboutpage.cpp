@@ -22,20 +22,14 @@ AboutPage::AboutPage(QWidget* parent)
     
     //一行高度为40-50
     ElaScrollPageArea* area1 = new ElaScrollPageArea(container);
-    area1->setFixedHeight(140);
+    area1->setFixedHeight(100);
     QVBoxLayout* basis = new QVBoxLayout(area1);
 
     QHBoxLayout* version = new QHBoxLayout();
     version->addWidget(new ElaText("<b>版本：</b>", 20));
-    version->addWidget(new ElaText("v1.0.1", 18));
+    version->addWidget(new ElaText("v1.1.0", 18));
     version->addStretch();
     basis->addLayout(version);
-
-    QHBoxLayout* date = new QHBoxLayout();
-    date->addWidget(new ElaText("<b>构建日期：</b>", 20));
-    date->addWidget(new ElaText("2026-04-28", 18));
-    date->addStretch();
-    basis->addLayout(date);
 
     QHBoxLayout* copyright = new QHBoxLayout();
     copyright->addWidget(new ElaText("<b>版权信息：</b>", 20));
@@ -46,7 +40,11 @@ AboutPage::AboutPage(QWidget* parent)
     basis->addLayout(copyright);
 
     ElaScrollPageArea* area2 = new ElaScrollPageArea(container);
+#ifdef ENABLE_MCP_SUPPORT
+    area2->setFixedHeight(800);
+#else
     area2->setFixedHeight(600);
+#endif
     QVBoxLayout* license = new QVBoxLayout(area2);
 
     license->addWidget(new ElaText("<b>第三方许可说明</b>", 20));
@@ -82,6 +80,18 @@ AboutPage::AboutPage(QWidget* parent)
     t52->setOpenExternalLinks(true);
     ElaText* t53 = new ElaText("许可证: BSD-style License Copyright (c) 2016 Wenzel Jakob <wenzel.jakob@epfl.ch>", 18);
 
+#ifdef ENABLE_MCP_SUPPORT
+    ElaText* t61 = new ElaText("<b>QtMcp(2026.7.28):</b>", 18);
+    QVBoxLayout* mcpinfo = new QVBoxLayout();
+    mcpinfo->setContentsMargins(20, 0, 0, 0);
+    ElaText* t62 = new ElaText("项目地址：<a href='https://github.com/signal-slot/qtmcp' style='color:#0078d4; text-decoration:none;'>https://github.com/signal-slot/qtmcp</a>", 18);
+    t62->setOpenExternalLinks(true);
+    ElaText* t63 = new ElaText("许可证: GNU Lesser General Public License v3.0（LGPL-3.0-only） Copyright (C) 2025 Signal Slot Inc.", 18);
+    t63->setWordWrap(true);
+    ElaText* t64 = new ElaText("本软件以动态链接方式使用QtMcp库。", 18);
+    t64->setWordWrap(true);
+#endif
+
     QHBoxLayout* footerLayout = new QHBoxLayout();
     footerLayout->setContentsMargins(0, 10, 10, 10);
     footerLayout->addStretch();
@@ -114,6 +124,14 @@ AboutPage::AboutPage(QWidget* parent)
     pyinfo->addWidget(t52);
     pyinfo->addWidget(t53);
     license->addLayout(pyinfo);
+#ifdef ENABLE_MCP_SUPPORT
+    license->addSpacing(20);
+    license->addWidget(t61);
+    mcpinfo->addWidget(t62);
+    mcpinfo->addWidget(t63);
+    mcpinfo->addWidget(t64);
+    license->addLayout(mcpinfo);
+#endif
 	footerLayout->addWidget(licenseLink);
 	license->addLayout(footerLayout);
 
